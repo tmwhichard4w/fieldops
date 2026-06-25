@@ -1,0 +1,17 @@
+{
+  "name": "FieldOps — Work Orders",
+  "short_name": "FieldOps",
+  "description": "Public Works & Parks work order management",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
