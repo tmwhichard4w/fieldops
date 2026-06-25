@@ -7,7 +7,7 @@ export const SUPABASE_ANON = sb_publishable_GfNMn1Ks7Gg2Oz7SaX7y0g_G1hvPy6y
 // ============================================================
 
 export const SUPABASE_URL  = "https://fpspcjqwlorakzgeujgs.supabase.co";
-export const SUPABASE_ANON = "YOUR-ANON-PUBLIC-KEY";
+export const SUPABASE_ANON = "sb_publishable_GfNMn1Ks7Gg2Oz7SaX7y0g_G1hvPy6y";
 
 // Town defaults — adjust to your area so new maps center correctly.
 export const MAP_CENTER = [31.105, -97.370]; // [latitude, longitude]
