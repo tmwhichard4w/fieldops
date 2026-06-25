@@ -1,11 +1,12 @@
 // ============================================================
 // FieldOps configuration
 // ------------------------------------------------------------
-// Paste the two values from your Supabase project here.
+//export const SUPABASE_URL  = https://fpspcjqwlorakzgeujgs.supabase.co
+export const SUPABASE_ANON = sb_publishable_GfNMn1Ks7Gg2Oz7SaX7y0g_G1hvPy6y
 // Supabase dashboard → Project Settings → API
 // ============================================================
 
-export const SUPABASE_URL  = "https://YOUR-PROJECT.supabase.co";
+export const SUPABASE_URL  = "https://fpspcjqwlorakzgeujgs.supabase.co";
 export const SUPABASE_ANON = "YOUR-ANON-PUBLIC-KEY";
 
 // Town defaults — adjust to your area so new maps center correctly.
