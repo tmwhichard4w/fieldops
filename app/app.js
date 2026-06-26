@@ -31,7 +31,8 @@ function respTime(o) {
 // ---------- state ----------
 let orders = [], equipment = [], inventory = [], requests = [], schedules = [], valves = [];
 let hydrants = [], manholes = [], mains = [];
-let gisLayer = null;            // leaflet layer group holding hydrants/manholes/mains
+let layerGroups = {};           // named, toggleable map layers
+let layersControl = null;
 let drawMode = null;            // null | 'hydrant' | 'manhole' | 'water' | 'sewer'
 let drawPath = [];              // points collected while tracing a line
 let drawTemp = null;            // temporary polyline while drawing
@@ -125,6 +126,18 @@ function initMap() {
   map = L.map("map", { zoomControl: false }).setView(MAP_CENTER, MAP_ZOOM);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     { attribution: "© OpenStreetMap", maxZoom: 19 }).addTo(map);
+
+  // Each feature type is its own layer the employee can toggle on/off.
+  layerGroups = {
+    "Work Orders": L.layerGroup().addTo(map),
+    "💧 Water Lines": L.layerGroup().addTo(map),
+    "🟢 Sewer Lines": L.layerGroup().addTo(map),
+    "🔥 Hydrants": L.layerGroup().addTo(map),
+    "⚫ Manholes": L.layerGroup().addTo(map),
+    "🔧 Valves": L.layerGroup().addTo(map),
+  };
+  // The checkbox panel (top-right). collapsed=false so it's visible/tappable.
+  layersControl = L.control.layers(null, layerGroups, { collapsed: false, position: "topright" }).addTo(map);
 }
 function markerColor(o) {
   if (isWater(o)) return "#0891b2";
@@ -244,56 +257,67 @@ function renderOrders() {
     </div>`).join("") || `<div style="text-align:center;color:var(--txt3);padding:40px;font-size:14px">No work orders found</div>`;
   $("woList").querySelectorAll(".wo-card").forEach(c => c.onclick = () => selectOrder(c.dataset.id));
 
+  // Work order markers go into the toggleable "Work Orders" layer.
+  const woGroup = layerGroups["Work Orders"];
+  if (woGroup) woGroup.clearLayers();
   orders.filter(o => o.lat && o.lng).forEach(o => {
     const icon = L.divIcon({ html: `<div style="width:16px;height:16px;border-radius:50%;background:${markerColor(o)};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>`, iconSize: [16, 16], iconAnchor: [8, 8], className: "" });
-    const m = L.marker([o.lat, o.lng], { icon }).addTo(map);
+    const m = L.marker([o.lat, o.lng], { icon });
     m.bindPopup(`<b>${esc(o.title)}</b><br><span style="font-size:12px;color:#666">${esc(o.wo_number)} · ${esc(o.status)}</span>`);
     m.on("click", () => selectOrder(o.id));
+    if (woGroup) m.addTo(woGroup);
     markers[o.id] = m;
   });
   renderGisLayer();
 }
 
-// Draw hydrants, manholes, and mains on the main map.
+// Fill each toggleable layer group with its features.
 function renderGisLayer() {
-  if (!map) return;
-  if (gisLayer) { map.removeLayer(gisLayer); }
-  gisLayer = L.layerGroup().addTo(map);
+  if (!map || !layerGroups["💧 Water Lines"]) return;
+  // Clear contents but keep the groups (preserves on/off toggle state).
+  ["💧 Water Lines", "🟢 Sewer Lines", "🔥 Hydrants", "⚫ Manholes", "🔧 Valves"]
+    .forEach(k => layerGroups[k] && layerGroups[k].clearLayers());
 
-  // mains (lines)
+  // mains (lines) → water or sewer group
   mains.forEach(ln => {
     const path = Array.isArray(ln.path) ? ln.path : JSON.parse(ln.path || "[]");
     if (path.length < 2) return;
-    const color = ln.kind === "sewer" ? "#16a34a" : "#0891b2";
-    const poly = L.polyline(path, { color, weight: 4, opacity: 0.8, dashArray: ln.kind === "sewer" ? "1" : null }).addTo(gisLayer);
-    poly.bindPopup(`<b>${ln.kind === "sewer" ? "Sewer" : "Water"} main</b><br><span style="font-size:12px;color:#666">${esc(ln.size || "")} ${esc(ln.material || "")}</span><br><span style="font-size:11px;color:#999">Tap to delete</span>`);
+    const sewer = ln.kind === "sewer";
+    const color = sewer ? "#16a34a" : "#0891b2";
+    const poly = L.polyline(path, { color, weight: 4, opacity: 0.85 });
+    poly.bindPopup(`<b>${sewer ? "Sewer" : "Water"} main</b><br><span style="font-size:12px;color:#666">${esc(ln.size || "")} ${esc(ln.material || "")}</span><br><span style="font-size:11px;color:#999">Tap to delete</span>`);
     poly.on("click", () => { if (confirm("Delete this line?")) api.deleteMain(ln.id).then(refreshAll); });
+    poly.addTo(layerGroups[sewer ? "🟢 Sewer Lines" : "💧 Water Lines"]);
   });
 
-  // hydrants (triangle-ish red marker)
+  // hydrants
   hydrants.forEach(h => {
     if (!h.lat || !h.lng) return;
     const icon = L.divIcon({ html: `<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:15px solid #dc2626;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))"></div>`, iconSize: [16, 15], iconAnchor: [8, 13], className: "" });
-    const m = L.marker([h.lat, h.lng], { icon }).addTo(gisLayer);
+    const m = L.marker([h.lat, h.lng], { icon });
     m.bindPopup(`<b>🔥 Hydrant ${esc(h.tag || "")}</b><br><span style="font-size:12px;color:#666">${esc(h.condition || "")}${h.flow_gpm ? " · " + esc(h.flow_gpm) + " gpm" : ""}</span>`);
     m.on("click", () => openHydrantModal(h));
+    m.addTo(layerGroups["🔥 Hydrants"]);
   });
 
-  // manholes (dark circle with ring)
+  // manholes
   manholes.forEach(mh => {
     if (!mh.lat || !mh.lng) return;
     const icon = L.divIcon({ html: `<div style="width:14px;height:14px;border-radius:50%;background:#374151;border:3px solid #9ca3af;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`, iconSize: [14, 14], iconAnchor: [7, 7], className: "" });
-    const m = L.marker([mh.lat, mh.lng], { icon }).addTo(gisLayer);
+    const m = L.marker([mh.lat, mh.lng], { icon });
     m.bindPopup(`<b>⚫ Manhole ${esc(mh.tag || "")}</b><br><span style="font-size:12px;color:#666">${esc(mh.condition || "")}${mh.depth ? " · " + esc(mh.depth) : ""}</span>`);
     m.on("click", () => openManholeModal(mh));
+    m.addTo(layerGroups["⚫ Manholes"]);
   });
 
-  // valves too, so the crew sees everything on one map
+  // valves
   valves.forEach(v => {
     if (!v.lat || !v.lng) return;
     const icon = L.divIcon({ html: `<div style="width:14px;height:14px;background:#7c3aed;border:2.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);transform:rotate(45deg)"></div>`, iconSize: [14, 14], iconAnchor: [7, 7], className: "" });
-    const m = L.marker([v.lat, v.lng], { icon }).addTo(gisLayer);
+    const m = L.marker([v.lat, v.lng], { icon });
     m.bindPopup(`<b>🔧 Valve ${esc(v.valve_tag || "")}</b><br><span style="font-size:12px;color:#666">${esc(v.valve_type)} ${esc(v.size)}</span>`);
+    m.on("click", () => openValveModal(v));
+    m.addTo(layerGroups["🔧 Valves"]);
   });
 }
 

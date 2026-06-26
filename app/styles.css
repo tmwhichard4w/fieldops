@@ -81,7 +81,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .badge-owned{background:var(--bg3);color:var(--txt2)}
 
 #map{width:100%;height:100%}
-.map-controls{position:absolute;top:12px;right:12px;z-index:500;display:flex;flex-direction:column;gap:6px}
+.map-controls{position:absolute;bottom:12px;right:12px;z-index:500;display:flex;flex-direction:column;gap:6px}
 .map-btn{background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow)}
 .map-btn svg{width:18px;height:18px;stroke:var(--txt2);stroke-width:2}
 .map-legend{position:absolute;bottom:12px;left:12px;z-index:500;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;box-shadow:var(--shadow);font-size:12px}
@@ -180,4 +180,16 @@ textarea.form-control{resize:vertical;min-height:70px}
   .draw-toolbar{max-width:none;left:8px;top:8px}
   .draw-btn span{display:none}
   .draw-btn{padding:8px}
+}
+
+/* Leaflet layers control — styled to match app, touch-friendly */
+.leaflet-control-layers{border-radius:var(--radius)!important;border:1px solid var(--border)!important;box-shadow:var(--shadow)!important;background:var(--bg2)!important;padding:6px 4px!important}
+.leaflet-control-layers-list{font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;color:var(--txt)}
+.leaflet-control-layers label{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-weight:500;margin:0}
+.leaflet-control-layers label:hover{background:var(--bg3)}
+.leaflet-control-layers input[type=checkbox]{width:18px;height:18px;accent-color:var(--blue);margin:0}
+.leaflet-control-layers-separator{display:none}
+@media(max-width:760px){
+  .leaflet-control-layers label{padding:8px}
+  .leaflet-control-layers input[type=checkbox]{width:20px;height:20px}
 }
