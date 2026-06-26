@@ -81,6 +81,11 @@ async function startApp() {
   setupDrawTools();
   await refreshAll();
   showView("map");
+  // Make sure the map fills its container once layout has settled.
+  // (Without this the map can render small with white space around it.)
+  setTimeout(() => map && map.invalidateSize(), 200);
+  setTimeout(() => map && map.invalidateSize(), 600);
+  window.addEventListener("resize", () => map && map.invalidateSize());
 }
 
 async function refreshAll() {
