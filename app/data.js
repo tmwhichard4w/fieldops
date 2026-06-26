@@ -59,6 +59,12 @@ export async function setStatus(id, status) {
   if (error) throw error;
 }
 
+// Permanently delete a work order (and its leak detail / logs / photos cascade).
+export async function deleteWorkOrder(id) {
+  const { error } = await db.from("work_orders").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // ---------- LOGS (labor / equipment / material / fuel) ----------
 export async function logsFor(table, woId) {
   const { data, error } = await db.from(table).select("*").eq("work_order_id", woId).order("logged_at");

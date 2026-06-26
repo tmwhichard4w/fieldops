@@ -403,11 +403,20 @@ function showDetail(o) {
       ${o.status !== "completed" ? `<button class="action-btn btn-complete" data-status="completed">✓ Complete</button>` : ""}
       ${o.status === "new" ? `<button class="action-btn btn-primary" data-status="in_progress">Start Work</button>` : ""}
       <button class="action-btn btn-secondary" id="gisBtn">🗺️ View City GIS</button>
-      <button class="action-btn btn-secondary" id="editBtn">Edit</button></div>`;
+      <button class="action-btn btn-secondary" id="editBtn">Edit</button></div>
+    <button class="ghost-btn" id="deleteWoBtn" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Delete this work order</button>`;
 
   $("detailPanel").classList.add("open");
   $("dClose").onclick = closeDetail;
   const grab = $("detailGrab"); if (grab) grab.onclick = closeDetail;
+  $("deleteWoBtn").onclick = async () => {
+    if (!confirm(`Delete work order "${o.title}"? This permanently removes it and all its labor, equipment, materials, and photos. This cannot be undone.`)) return;
+    try {
+      await api.deleteWorkOrder(o.id);
+      closeDetail();
+      await refreshAll();
+    } catch (err) { alert("Delete failed: " + err.message); }
+  };
   $("editBtn").onclick = () => openOrderModal(o);
   $("gisBtn").onclick = () => openCityGIS(o.lat, o.lng);
   $("detailContent").querySelectorAll("[data-status]").forEach(b => b.onclick = async () => {
