@@ -685,26 +685,66 @@ function pgIntake() {
   const rows = requests.map(r => `<tr><td style="font-family:monospace;font-size:12px;color:var(--txt3)">${esc(r.id.slice(0, 8))}</td>
     <td><div style="font-weight:600">${esc(r.resident || "")}</div><div style="font-size:12px;color:var(--txt3)">${esc(r.phone || "")}</div></td>
     <td style="font-size:13px">${esc(r.address || "")}</td><td style="font-size:13px">${esc(r.issue || "")}</td><td style="font-size:12px">${fmtDT(r.reported_at)}</td>
-    <td>${r.status === "converted" ? `<span class="badge badge-done">→ Work Order</span>` : `<button class="add-line-btn" data-req="${r.id}">Create Order</button>`}</td></tr>`).join("");
+    <td>${r.status === "converted" ? `<span class="badge badge-done">→ Work Order</span>` : `<button class="add-line-btn" data-req="${r.id}">Create Order</button>`} <span class="del-req" data-del="${r.id}" style="color:var(--red-txt);cursor:pointer;margin-left:8px;font-weight:600">✕</span></td></tr>`).join("");
   $("pageContent").innerHTML = `<div class="page-head"><h2>📞 Citizen Requests</h2><button class="new-btn" id="newReq"><svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px"><path d="M8 3v10M3 8h10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg><span>Log Call</span></button></div>
-    <div class="data-card"><table class="data-table"><thead><tr><th>ID</th><th>Resident</th><th>Address</th><th>Issue</th><th>Reported</th><th>Action</th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="color:var(--txt3)">No open requests</td></tr>`}</tbody></table></div>`;
+    <div class="data-card"><table class="data-table"><thead><tr><th>ID</th><th>Resident</th><th>Address</th><th>Issue</th><th>Reported</th><th>Action</th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="color:var(--txt3)">No open requests</td></tr>`}</tbody></table></div>
+    <p style="font-size:13px;color:var(--txt3)">Tap "Create Order" to turn a request into a work order, or ✕ to delete a request that doesn't need attention.</p>`;
   $("newReq").onclick = async () => {
     const resident = prompt("Resident name:"); if (!resident) return;
     await api.addRequest({ resident, phone: prompt("Phone:") || "", address: prompt("Address:") || "", issue: prompt("Issue:") || "", reported_at: new Date().toISOString() });
     await refreshAll(); pgIntake();
   };
   $("pageContent").querySelectorAll("[data-req]").forEach(b => b.onclick = () => { prefillReq = requests.find(r => r.id === b.dataset.req); openOrderModal(); });
+  $("pageContent").querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    if (!confirm("Delete this citizen request? This can't be undone.")) return;
+    await api.deleteRequest(b.dataset.del); await refreshAll(); pgIntake();
+  });
 }
 
 function pgSchedule() {
   const rows = [...schedules].sort((a, b) => new Date(a.next_due) - new Date(b.next_due)).map(s => {
     const days = Math.round((new Date(s.next_due) - new Date()) / 8.64e7);
-    const badge = days < 0 ? `<span class="low-stock">Overdue</span>` : days <= 3 ? `<span style="color:var(--amber-txt);font-weight:600">${days}d</span>` : `${days}d`;
-    return `<tr><td style="font-weight:600">${esc(s.task)}</td><td>${esc(s.category)}</td><td>${esc(s.frequency)}</td><td>${esc(s.next_due)}</td><td>${badge}</td><td>${esc(s.assigned_to || "")}</td></tr>`;
+    const badge = isNaN(days) ? "" : days < 0 ? `<span class="low-stock">Overdue</span>` : days <= 3 ? `<span style="color:var(--amber-txt);font-weight:600">${days}d</span>` : `${days}d`;
+    return `<tr data-sch="${s.id}" style="cursor:pointer"><td style="font-weight:600">${esc(s.task)}</td><td>${esc(s.category)}</td><td>${esc(s.frequency)}</td><td>${esc(s.next_due || "")}</td><td>${badge}</td><td>${esc(s.assigned_to || "")}</td></tr>`;
   }).join("");
-  $("pageContent").innerHTML = `<div class="page-head"><h2>📅 Preventive Maintenance</h2></div>
-    <p style="font-size:13px;color:var(--txt2);margin-bottom:16px">Hydrant flushing, valve exercising, lift-station inspections, mowing, meter reading.</p>
-    <div class="data-card"><table class="data-table"><thead><tr><th>Task</th><th>Type</th><th>Frequency</th><th>Next Due</th><th>Countdown</th><th>Assigned</th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="color:var(--txt3)">No scheduled tasks</td></tr>`}</tbody></table></div>`;
+  $("pageContent").innerHTML = `<div class="page-head"><h2>📅 Preventive Maintenance</h2><button class="new-btn" id="addSch"><svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px"><path d="M8 3v10M3 8h10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg><span>Add Task</span></button></div>
+    <p style="font-size:13px;color:var(--txt2);margin-bottom:16px">Recurring tasks like hydrant flushing, valve exercising, inspections, mowing, meter reading. Tap any task to edit or delete it.</p>
+    <div class="data-card"><table class="data-table"><thead><tr><th>Task</th><th>Type</th><th>Frequency</th><th>Next Due</th><th>Countdown</th><th>Assigned</th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="color:var(--txt3)">No scheduled tasks yet — tap "Add Task".</td></tr>`}</tbody></table></div>`;
+  $("addSch").onclick = () => openScheduleModal();
+  $("pageContent").querySelectorAll("tr[data-sch]").forEach(t => t.onclick = () => openScheduleModal(schedules.find(s => s.id === t.dataset.sch)));
+}
+
+function openScheduleModal(s) {
+  s = s || {};
+  const freqs = ["Weekly", "Bi-weekly", "Monthly", "Quarterly", "Semi-annual", "Annual", "As needed"];
+  const cats = ["Hydrant", "Valve", "Water", "Sewer Issue", "Meter", "Grounds", "Roads", "Buildings", "Other"];
+  const sel = (arr, v) => arr.map(x => `<option ${x === v ? "selected" : ""}>${x}</option>`).join("");
+  const people = ["Unassigned", ...staffNames()];
+  $("modalBox").innerHTML = `
+    <h2>${s.id ? "Edit" : "Add"} Maintenance Task</h2>
+    <div class="form-group"><label>Task *</label><input class="form-control" id="sc-task" value="${esc(s.task || "")}" placeholder="e.g. Hydrant flushing — North zone"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>Type</label><select class="form-control" id="sc-cat">${sel(cats, s.category || "Other")}</select></div>
+      <div class="form-group"><label>Frequency</label><select class="form-control" id="sc-freq">${sel(freqs, s.frequency || "Annual")}</select></div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label>Next Due</label><input class="form-control" id="sc-due" type="date" value="${s.next_due || ""}"></div>
+      <div class="form-group"><label>Assigned To</label><select class="form-control" id="sc-assign">${sel(people, s.assigned_to || "Unassigned")}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="action-btn btn-primary" id="saveSch">Save</button>
+      <button class="action-btn btn-secondary" id="cancelSch">Cancel</button>
+    </div>
+    ${s.id ? `<button class="ghost-btn" id="delSch" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Delete this task</button>` : ""}`;
+  $("modalOverlay").classList.add("open");
+  $("cancelSch").onclick = closeModal;
+  if (s.id) $("delSch").onclick = async () => { if (confirm(`Delete "${s.task}"?`)) { await api.deleteSchedule(s.id); closeModal(); await refreshAll(); pgSchedule(); } };
+  $("saveSch").onclick = async () => {
+    const task = $("sc-task").value.trim(); if (!task) { alert("Enter a task name."); return; }
+    const rec = { task, category: $("sc-cat").value, frequency: $("sc-freq").value, next_due: $("sc-due").value || null, assigned_to: $("sc-assign").value };
+    if (s.id) rec.id = s.id;
+    try { await api.saveSchedule(rec); closeModal(); await refreshAll(); pgSchedule(); } catch (err) { alert("Save failed: " + err.message); }
+  };
 }
 
 function pgInventory() {

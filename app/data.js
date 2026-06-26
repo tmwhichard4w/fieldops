@@ -137,12 +137,18 @@ export async function addRequest(row) { return db.from("requests").insert(row); 
 export async function markRequestConverted(id, woId) {
   return db.from("requests").update({ status: "converted", work_order_id: woId }).eq("id", id);
 }
+export async function deleteRequest(id) { return db.from("requests").delete().eq("id", id); }
 
 // ---------- SCHEDULE ----------
 export async function listSchedules() {
   const { data } = await db.from("schedules").select("*").order("next_due");
   return data || [];
 }
+export async function saveSchedule(s) {
+  if (s.id) { const { error } = await db.from("schedules").update(s).eq("id", s.id); if (error) throw error; return s.id; }
+  const { data, error } = await db.from("schedules").insert(s).select().single(); if (error) throw error; return data.id;
+}
+export async function deleteSchedule(id) { return db.from("schedules").delete().eq("id", id); }
 
 // ---------- VALVES ----------
 export async function listValves() {
