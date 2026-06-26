@@ -16,6 +16,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 /* The app shell must fill the screen and lay out as a column so the
    map area (flex:1) actually stretches to fill remaining space. */
 #app{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+/* The active view (map or a page) grows to fill what's left under the nav. */
+#mainView{flex:1;min-height:0}
+#pageView{flex:1;min-height:0}
 
 /* LOGIN */
 .login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;z-index:3000}

@@ -68,7 +68,7 @@ $("signOutBtn").onclick = async () => { await api.signOut(); location.reload(); 
 
 async function startApp() {
   $("loginScreen").style.display = "none";
-  $("app").style.display = "block";
+  $("app").style.display = "flex";
   buildNav();
   buildFilters();
   initMap();
