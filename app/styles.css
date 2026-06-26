@@ -13,6 +13,9 @@
 }
 html,body{height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--txt);display:flex;flex-direction:column;height:100vh;overflow:hidden}
+/* The app shell must fill the screen and lay out as a column so the
+   map area (flex:1) actually stretches to fill remaining space. */
+#app{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 
 /* LOGIN */
 .login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;z-index:3000}
@@ -48,7 +51,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .stat-cyan .stat-num{color:var(--cyan-txt)}
 
 /* MAIN / MAP */
-.main{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;overflow:hidden;min-height:0}
 .sidebar{width:340px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
 .map-area{flex:1;position:relative;min-width:0}
 .sidebar-header{padding:14px 16px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
