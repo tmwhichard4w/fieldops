@@ -4,8 +4,8 @@
 export const SUPABASE_URL = "https://fpspcjqwlorakzgeujgs.supabase.co";
 export const SUPABASE_ANON = "sb_publishable_GfNMn1Ks7Gg2Oz7SaX7y0g_G1hvPy6y";
 
-export const MAP_CENTER = [31.105, -97.370];
-export const MAP_ZOOM   = 13;
+export const MAP_CENTER = [31.2068, -97.3028];
+export const MAP_ZOOM   = 14;
 
 export const OT_MULTIPLIER = 1.5;
 
