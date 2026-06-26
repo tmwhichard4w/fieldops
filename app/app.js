@@ -12,6 +12,13 @@ const fmtDT = s => s ? new Date(s).toLocaleString("en-US", { month: "short", day
 const isWater = o => o.category === "Water Leak";
 const isSewer = o => o.category === "Sewer Issue";
 
+// Names for "assigned to" / worker dropdowns, pulled from the Staff list.
+// Falls back to a couple of defaults only if no staff have been added yet.
+function staffNames() {
+  if (staff && staff.length) return staff.map(s => s.full_name);
+  return ["Crew A", "Crew B"];
+}
+
 // Open the City of Troy GIS map, centered on a location when we have one.
 function openCityGIS(lat, lng) {
   let url = CITY_GIS_URL;
@@ -30,7 +37,7 @@ function respTime(o) {
 
 // ---------- state ----------
 let orders = [], equipment = [], inventory = [], requests = [], schedules = [], valves = [];
-let hydrants = [], manholes = [], mains = [];
+let hydrants = [], manholes = [], mains = [], staff = [];
 let layerGroups = {};           // named, toggleable map layers
 let layersControl = null;
 let drawMode = null;            // null | 'hydrant' | 'manhole' | 'water' | 'sewer'
@@ -43,7 +50,7 @@ let map, markers = {};
 const TABS = [
   ["map", "Map"], ["list", "Orders"], ["water", "Water"], ["sewer", "Sewer"],
   ["intake", "Requests"], ["schedule", "Schedule"], ["inventory", "Inventory"],
-  ["equipment", "Equipment"], ["valves", "Valves"], ["reports", "Reports"], ["settings", "Settings"]
+  ["equipment", "Equipment"], ["valves", "Valves"], ["staff", "Staff"], ["reports", "Reports"], ["settings", "Settings"]
 ];
 
 // ============================================================
@@ -93,8 +100,8 @@ async function refreshAll() {
     api.listWorkOrders(), api.listEquipment(), api.listInventory(),
     api.listRequests(), api.listSchedules(), api.listValves()
   ]);
-  [hydrants, manholes, mains] = await Promise.all([
-    api.listHydrants(), api.listManholes(), api.listMains()
+  [hydrants, manholes, mains, staff] = await Promise.all([
+    api.listHydrants(), api.listManholes(), api.listMains(), api.listStaff()
   ]);
   // flatten leak_details (Supabase returns it as array)
   orders.forEach(o => { o.leak = (o.leak_details && o.leak_details[0]) || null; });
@@ -370,7 +377,7 @@ function showDetail(o) {
     </div>` : "";
 
   const laborRows = logs.labor.map(l => `<tr><td>${esc(l.worker)}</td><td>${l.reg_hours} hr</td><td>${l.ot_hours} hr</td><td>${fmt(l.reg_hours * l.rate + l.ot_hours * l.rate * OT_MULTIPLIER)}</td><td><span class="del" data-t="labor_log" data-id="${l.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="5" style="color:var(--txt3)">No labor logged</td></tr>`;
-  const equipRows = logs.equip.map(e => `<tr><td>${esc(e.equipment_name)} <span class="badge badge-${e.ownership === "rented" ? "rented" : "owned"}">${e.ownership}</span></td><td>${e.hours} hr</td><td>${fmt(e.hours * e.rate)}</td><td><span class="del" data-t="equipment_log" data-id="${e.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--txt3)">No equipment logged</td></tr>`;
+  const equipRows = logs.equip.map(e => `<tr><td>${esc(e.equipment_name)} <span class="badge badge-${e.ownership === "rented" ? "rented" : "owned"}">${e.ownership}</span>${e.assigned_to ? `<br><span style="font-size:11px;color:var(--txt3)">👤 ${esc(e.assigned_to)} ${e.safety_confirmed ? '<span style="color:var(--green-txt)">· ✓ safety</span>' : '<span style="color:var(--red-txt)">· ⚠ safety not confirmed</span>'}</span>` : ""}</td><td>${e.hours} hr</td><td>${fmt(e.hours * e.rate)}</td><td><span class="del" data-t="equipment_log" data-id="${e.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--txt3)">No equipment logged</td></tr>`;
   const matRows = logs.mat.map(m => `<tr><td>${esc(m.item_name)}</td><td>${m.qty}</td><td>${fmt(m.qty * m.unit_cost)}</td><td><span class="del" data-t="material_log" data-id="${m.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--txt3)">No materials logged</td></tr>`;
   const photoHtml = photos.map(p => `<div class="photo-thumb"><img src="${p.url}" alt="${esc(p.label)}"></div>`).join("");
 
@@ -446,7 +453,7 @@ function closeDetail() { $("detailPanel").classList.remove("open"); selectedId =
 // ============================================================
 function openOrderModal(o) {
   editingId = o ? o.id : null;
-  const crews = ["Unassigned", "Crew A", "Crew B", "Crew C", "John Martinez", "Sarah Lee", "Mike Johnson", "Dale Cooper"];
+  const crews = ["Unassigned", ...staffNames()];
   const cats = ["Water Leak", "Sewer Issue", "Roads", "Electrical", "Meter", "Hydrant", "Valve", "Parks", "Trails", "Buildings", "Grounds", "Other"];
   const sizes = ['3/4"', '1"', '2"', '4"', '6"', '8"', '10"', '12"'];
   const mats = ["PVC", "Ductile Iron", "Cast Iron", "Asbestos Cement", "HDPE", "Steel", "Clay (sewer)"];
@@ -560,7 +567,7 @@ function closeModal() { $("modalOverlay").classList.remove("open"); editingId = 
 // LINE MODALS (labor / equip / material)
 // ============================================================
 function openLineModal(o, type) {
-  const crews = ["Crew A", "Crew B", "Crew C", "John Martinez", "Sarah Lee", "Mike Johnson", "Dale Cooper"];
+  const crews = staffNames();
   let body, title;
   if (type === "labor") {
     title = "Log Labor / Man-Hours";
@@ -570,8 +577,14 @@ function openLineModal(o, type) {
       <div class="form-group"><label>Rate ($/hr)</label><input class="form-control" id="l-rate" type="number" step="0.5" value="30"></div>`;
   } else if (type === "equip") {
     title = "Log Equipment Used";
+    const people = staffNames();
     body = `<div class="form-group"><label>Equipment</label><select class="form-control" id="l-eq">${equipment.map(e => `<option value="${e.id}">${esc(e.name)} — ${e.ownership} · ${fmt(e.hourly_rate)}/hr</option>`).join("")}</select></div>
-      <div class="form-group"><label>Hours Used</label><input class="form-control" id="l-hrs" type="number" step="0.5" value="1"></div>`;
+      <div class="form-group"><label>Hours Used</label><input class="form-control" id="l-hrs" type="number" step="0.5" value="1"></div>
+      <div class="form-group"><label>Signed out to (employee)</label><select class="form-control" id="l-assigned">${people.map(p => `<option>${esc(p)}</option>`).join("")}</select></div>
+      <label style="display:flex;align-items:center;gap:10px;background:var(--amber-bg);border:1px solid #fcd34d;border-radius:8px;padding:12px;cursor:pointer">
+        <input type="checkbox" id="l-safety" style="width:20px;height:20px;flex-shrink:0">
+        <span style="font-size:13px;font-weight:600;color:var(--amber-txt)">✓ I confirm the safety video was watched before sign-out</span>
+      </label>`;
   } else {
     title = "Log Material / Consumable";
     body = `<div class="form-group"><label>Item</label><select class="form-control" id="l-item">${inventory.map(i => `<option value="${i.id}">${esc(i.name)} (${i.qty} ${i.unit})</option>`).join("")}</select></div>
@@ -589,7 +602,15 @@ async function submitLine(o, type) {
       await api.addLabor({ work_order_id: o.id, worker: $("l-who").value, reg_hours: +$("l-reg").value || 0, ot_hours: +$("l-ot").value || 0, rate: +$("l-rate").value || 30 });
     } else if (type === "equip") {
       const eq = equipment.find(e => e.id === $("l-eq").value); const hrs = +$("l-hrs").value || 0;
-      await api.addEquipUse({ work_order_id: o.id, equipment_id: eq.id, equipment_name: eq.name, hours: hrs, rate: eq.hourly_rate, ownership: eq.ownership });
+      const assigned = $("l-assigned") ? $("l-assigned").value : null;
+      const safety = $("l-safety") ? $("l-safety").checked : false;
+      await api.addEquipUse({
+        work_order_id: o.id, equipment_id: eq.id, equipment_name: eq.name, hours: hrs,
+        rate: eq.hourly_rate, ownership: eq.ownership, assigned_to: assigned,
+        safety_confirmed: safety,
+        safety_confirmed_by: safety ? assigned : null,
+        safety_confirmed_at: safety ? new Date().toISOString() : null
+      });
       if (eq.ownership === "owned") await api.bumpRunHours(eq.id, hrs);
     } else {
       const it = inventory.find(i => i.id === $("l-item").value); const qty = +$("l-qty").value || 0;
@@ -615,7 +636,7 @@ function showView(v) {
   $("pageView").style.display = v === "map" ? "none" : "block";
   $("navTabs").querySelectorAll(".nav-tab").forEach(t => t.classList.toggle("active", t.dataset.view === v));
   if (v === "map" && map) setTimeout(() => map.invalidateSize(), 100);
-  const render = { list: pgList, water: () => pgLeaks("water"), sewer: () => pgLeaks("sewer"), intake: pgIntake, schedule: pgSchedule, inventory: pgInventory, equipment: pgEquipment, valves: pgValves, reports: pgReports, settings: pgSettings }[v];
+  const render = { list: pgList, water: () => pgLeaks("water"), sewer: () => pgLeaks("sewer"), intake: pgIntake, schedule: pgSchedule, inventory: pgInventory, equipment: pgEquipment, valves: pgValves, staff: pgStaff, reports: pgReports, settings: pgSettings }[v];
   if (render) render();
 }
 
@@ -713,20 +734,101 @@ function pgEquipment() {
   const ownedRows = owned.map(e => {
     const pct = Math.min(100, Math.round(e.run_hours / (e.service_at || 1) * 100));
     const color = e.status === "due_soon" ? "var(--amber)" : pct > 90 ? "var(--red)" : "var(--green)";
-    return `<tr><td style="font-weight:600">${esc(e.name)}</td><td>${fmt(e.hourly_rate)}/hr</td><td>${Number(e.run_hours).toLocaleString()} hr</td>
+    return `<tr data-eq="${e.id}" style="cursor:pointer"><td style="font-weight:600">${esc(e.name)}</td><td>${fmt(e.hourly_rate)}/hr</td><td>${Number(e.run_hours).toLocaleString()} hr</td>
       <td><div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${color}"></div></div>${Number(e.service_at).toLocaleString()} hr</td>
       <td>${e.status === "due_soon" ? `<span class="low-stock">⚠ Service Due</span>` : `<span style="color:var(--green-txt)">In Service</span>`}</td></tr>`;
   }).join("");
-  const rentedRows = rented.map(e => `<tr><td style="font-weight:600">${esc(e.name)} <span class="badge badge-rented">Rented</span></td><td>${esc(e.vendor || "—")}</td><td>${fmt(e.hourly_rate)}/hr</td></tr>`).join("");
-  $("pageContent").innerHTML = `<div class="page-head"><h2>🚜 Equipment & Fleet</h2></div>
+  const rentedRows = rented.map(e => `<tr data-eq="${e.id}" style="cursor:pointer"><td style="font-weight:600">${esc(e.name)} <span class="badge badge-rented">Rented</span></td><td>${esc(e.vendor || "—")}</td><td>${fmt(e.hourly_rate)}/hr</td></tr>`).join("");
+  $("pageContent").innerHTML = `<div class="page-head"><h2>🚜 Equipment & Fleet</h2><button class="new-btn" id="addEquip"><svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px"><path d="M8 3v10M3 8h10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg><span>Add Equipment</span></button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">
       <div class="stat-card"><div class="stat-num">${owned.length}</div><div class="stat-lbl">Owned</div></div>
       <div class="stat-card stat-amber"><div class="stat-num">${rented.length}</div><div class="stat-lbl">Rented</div></div>
       <div class="stat-card stat-red"><div class="stat-num">${owned.filter(e => e.status === "due_soon").length}</div><div class="stat-lbl">Service Due</div></div></div>
     <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">Owned Equipment</h3>
-    <div class="data-card"><table class="data-table"><thead><tr><th>Equipment</th><th>Rate</th><th>Run Hours</th><th>Next Service</th><th>Status</th></tr></thead><tbody>${ownedRows}</tbody></table></div>
+    <div class="data-card"><table class="data-table"><thead><tr><th>Equipment</th><th>Rate</th><th>Run Hours</th><th>Next Service</th><th>Status</th></tr></thead><tbody>${ownedRows || `<tr><td colspan="5" style="color:var(--txt3)">None yet</td></tr>`}</tbody></table></div>
     <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">Rented Equipment</h3>
-    <div class="data-card"><table class="data-table"><thead><tr><th>Equipment</th><th>Vendor</th><th>Rate</th></tr></thead><tbody>${rentedRows || `<tr><td colspan="3" style="color:var(--txt3)">No rentals</td></tr>`}</tbody></table></div>`;
+    <div class="data-card"><table class="data-table"><thead><tr><th>Equipment</th><th>Vendor</th><th>Rate</th></tr></thead><tbody>${rentedRows || `<tr><td colspan="3" style="color:var(--txt3)">No rentals</td></tr>`}</tbody></table></div>
+    <p style="font-size:13px;color:var(--txt3)">Tap any equipment to edit its rate, ownership, or details. Rented units can be switched to owned (and vice-versa) anytime.</p>`;
+  $("addEquip").onclick = () => openEquipModal();
+  $("pageContent").querySelectorAll("tr[data-eq]").forEach(t => t.onclick = () => openEquipModal(equipment.find(e => e.id === t.dataset.eq)));
+}
+
+function openEquipModal(e) {
+  e = e || {};
+  const sel = (arr, v) => arr.map(x => `<option ${x === v ? "selected" : ""}>${x}</option>`).join("");
+  $("modalBox").innerHTML = `
+    <h2>${e.id ? "Edit" : "Add"} Equipment</h2>
+    <div class="form-group"><label>Name *</label><input class="form-control" id="e-name" value="${esc(e.name || "")}" placeholder="e.g. Backhoe (Case 580)"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>Ownership</label><select class="form-control" id="e-own">${sel(["owned", "rented"], e.ownership || "owned")}</select></div>
+      <div class="form-group"><label>Rate ($/hour) *</label><input class="form-control" id="e-rate" type="number" step="0.01" value="${e.hourly_rate ?? ""}" placeholder="45"></div>
+    </div>
+    <div class="form-group" id="e-vendor-row"><label>Rental Vendor</label><input class="form-control" id="e-vendor" value="${esc(e.vendor || "")}" placeholder="e.g. United Rentals"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>Run Hours (owned)</label><input class="form-control" id="e-hours" type="number" step="1" value="${e.run_hours ?? 0}"></div>
+      <div class="form-group"><label>Next Service At (hrs)</label><input class="form-control" id="e-service" type="number" step="1" value="${e.service_at ?? 0}"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="action-btn btn-primary" id="saveEquip">Save</button>
+      <button class="action-btn btn-secondary" id="cancelEquip">Cancel</button>
+    </div>
+    ${e.id ? `<button class="ghost-btn" id="delEquip" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Delete equipment</button>` : ""}`;
+  $("modalOverlay").classList.add("open");
+  const toggleVendor = () => { $("e-vendor-row").style.display = $("e-own").value === "rented" ? "block" : "none"; };
+  $("e-own").onchange = toggleVendor; toggleVendor();
+  $("cancelEquip").onclick = closeModal;
+  if (e.id) $("delEquip").onclick = async () => { if (confirm(`Delete "${e.name}"?`)) { await api.deleteEquipment(e.id); closeModal(); await refreshAll(); pgEquipment(); } };
+  $("saveEquip").onclick = async () => {
+    const name = $("e-name").value.trim(); if (!name) { alert("Enter a name."); return; }
+    const own = $("e-own").value;
+    const rec = { name, ownership: own, hourly_rate: parseFloat($("e-rate").value) || 0,
+      vendor: own === "rented" ? $("e-vendor").value.trim() : null,
+      run_hours: parseFloat($("e-hours").value) || 0, service_at: parseFloat($("e-service").value) || 0,
+      status: own === "rented" ? "rental" : "in_service" };
+    if (e.id) rec.id = e.id;
+    try { await api.saveEquipment(rec); closeModal(); await refreshAll(); pgEquipment(); } catch (err) { alert("Save failed: " + err.message); }
+  };
+}
+
+// ============================================================
+// STAFF / CREW management
+// ============================================================
+function pgStaff() {
+  const rows = staff.map(s => `<tr data-staff="${s.id}" style="cursor:pointer">
+    <td style="font-weight:600">${esc(s.full_name)}</td>
+    <td><span class="badge badge-pw">${esc(s.role)}</span></td>
+    <td>${fmt(s.labor_rate)}/hr</td></tr>`).join("");
+  $("pageContent").innerHTML = `<div class="page-head"><h2>👷 Staff & Crews</h2><button class="new-btn" id="addStaff"><svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px"><path d="M8 3v10M3 8h10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg><span>Add Person/Crew</span></button></div>
+    <div class="data-card"><table class="data-table"><thead><tr><th>Name</th><th>Role</th><th>Labor Rate</th></tr></thead><tbody>${rows || `<tr><td colspan="3" style="color:var(--txt3)">No staff yet — add your employees and crews.</td></tr>`}</tbody></table></div>
+    <p style="font-size:13px;color:var(--txt3)">Everyone here shows up in the "Assigned To" and worker dropdowns on work orders. Add real employees and crew names; tap any to edit or remove.</p>`;
+  $("addStaff").onclick = () => openStaffModal();
+  $("pageContent").querySelectorAll("tr[data-staff]").forEach(t => t.onclick = () => openStaffModal(staff.find(s => s.id === t.dataset.staff)));
+}
+
+function openStaffModal(s) {
+  s = s || {};
+  const sel = (arr, v) => arr.map(x => `<option ${x === v ? "selected" : ""}>${x}</option>`).join("");
+  $("modalBox").innerHTML = `
+    <h2>${s.id ? "Edit" : "Add"} Person / Crew</h2>
+    <div class="form-group"><label>Name *</label><input class="form-control" id="s-name" value="${esc(s.full_name || "")}" placeholder="e.g. John Martinez or Crew A"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>Role</label><select class="form-control" id="s-role">${sel(["field", "office", "admin"], s.role || "field")}</select></div>
+      <div class="form-group"><label>Labor Rate ($/hr)</label><input class="form-control" id="s-rate" type="number" step="0.01" value="${s.labor_rate ?? 30}"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="action-btn btn-primary" id="saveStaff">Save</button>
+      <button class="action-btn btn-secondary" id="cancelStaff">Cancel</button>
+    </div>
+    ${s.id ? `<button class="ghost-btn" id="delStaff" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Remove from active list</button>` : ""}`;
+  $("modalOverlay").classList.add("open");
+  $("cancelStaff").onclick = closeModal;
+  if (s.id) $("delStaff").onclick = async () => { if (confirm(`Remove ${s.full_name}? They'll disappear from dropdowns but past records stay intact.`)) { await api.deleteStaff(s.id); closeModal(); await refreshAll(); pgStaff(); } };
+  $("saveStaff").onclick = async () => {
+    const name = $("s-name").value.trim(); if (!name) { alert("Enter a name."); return; }
+    const rec = { full_name: name, role: $("s-role").value, labor_rate: parseFloat($("s-rate").value) || 30, active: true };
+    if (s.id) rec.id = s.id;
+    try { await api.saveStaff(rec); closeModal(); await refreshAll(); pgStaff(); } catch (err) { alert("Save failed: " + err.message); }
+  };
 }
 
 async function pgReports() {

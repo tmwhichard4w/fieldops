@@ -82,6 +82,27 @@ export async function listEquipment() {
   if (error) throw error;
   return data || [];
 }
+
+// ---------- STAFF / CREW ----------
+export async function listStaff() {
+  const { data } = await db.from("staff").select("*").eq("active", true).order("full_name");
+  return data || [];
+}
+export async function saveStaff(s) {
+  if (s.id) { const { error } = await db.from("staff").update(s).eq("id", s.id); if (error) throw error; return s.id; }
+  const { data, error } = await db.from("staff").insert(s).select().single(); if (error) throw error; return data.id;
+}
+export async function deleteStaff(id) {
+  // soft-delete: keep history intact but drop from active dropdowns
+  return db.from("staff").update({ active: false }).eq("id", id);
+}
+
+// ---------- EQUIPMENT create / update / delete ----------
+export async function saveEquipment(e) {
+  if (e.id) { const { error } = await db.from("equipment").update(e).eq("id", e.id); if (error) throw error; return e.id; }
+  const { data, error } = await db.from("equipment").insert(e).select().single(); if (error) throw error; return data.id;
+}
+export async function deleteEquipment(id) { return db.from("equipment").delete().eq("id", id); }
 export async function bumpRunHours(equipId, addHours) {
   const { data } = await db.from("equipment").select("run_hours, service_at").eq("id", equipId).single();
   if (!data) return;
