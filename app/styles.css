@@ -166,14 +166,19 @@ textarea.form-control{resize:vertical;min-height:70px}
 .leak-water{background:var(--cyan-bg)}.leak-sewer{background:var(--green-bg)}
 
 @media(max-width:760px){
-  .sidebar{width:100%;position:absolute;z-index:400;height:46%;bottom:0;border-right:none;border-top:1px solid var(--border);border-radius:16px 16px 0 0}
-  .map-area{height:54%;position:absolute;top:0;left:0;right:0}
+  .sidebar{width:100%;position:absolute;z-index:400;height:42%;bottom:0;border-right:none;border-top:1px solid var(--border);border-radius:16px 16px 0 0}
+  .map-area{height:58%;position:absolute;top:0;left:0;right:0}
   .main{position:relative}
   .stats-bar{display:none}
   .nav-tab span{display:none}
+  .nav-tab{padding:8px}
   .nb-label{display:none}
   .new-btn{padding:8px}
   .form-grid,.form-grid-3{grid-template-columns:1fr}
+  .page{padding:14px}
+  .page-head h2{font-size:19px}
+  .data-table th,.data-table td{padding:8px 10px;font-size:13px}
+  .modal{max-height:88vh}
 }
 .leaflet-popup-content{margin:10px 14px;font-family:inherit}
 
@@ -186,9 +191,9 @@ textarea.form-control{resize:vertical;min-height:70px}
 .draw-banner.show{display:flex}
 .draw-banner button{background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:14px;padding:4px 12px;font-size:13px;font-weight:600;cursor:pointer}
 @media(max-width:760px){
-  .draw-toolbar{max-width:none;left:8px;top:8px}
+  .draw-toolbar{max-width:calc(100% - 70px);left:8px;top:8px}
   .draw-btn span{display:none}
-  .draw-btn{padding:8px}
+  .draw-btn{padding:9px;font-size:15px}
 }
 
 /* Leaflet layers control — styled to match app, touch-friendly */

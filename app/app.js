@@ -50,7 +50,7 @@ let map, markers = {};
 const TABS = [
   ["map", "Map"], ["list", "Orders"], ["water", "Water"], ["sewer", "Sewer"],
   ["intake", "Requests"], ["schedule", "Schedule"], ["inventory", "Inventory"],
-  ["equipment", "Equipment"], ["valves", "Valves"], ["staff", "Staff"], ["reports", "Reports"], ["settings", "Settings"]
+  ["equipment", "Equipment"], ["staff", "Staff"], ["reports", "Reports"], ["settings", "Settings"]
 ];
 
 // ============================================================
@@ -149,7 +149,8 @@ function initMap() {
     "🔧 Valves": L.layerGroup().addTo(map),
   };
   // The checkbox panel (top-right). collapsed=false so it's visible/tappable.
-  layersControl = L.control.layers(null, layerGroups, { collapsed: false, position: "topright" }).addTo(map);
+  const onPhone = window.matchMedia("(max-width:760px)").matches;
+  layersControl = L.control.layers(null, layerGroups, { collapsed: onPhone, position: "topright" }).addTo(map);
 }
 function markerColor(o) {
   if (isWater(o)) return "#0891b2";
@@ -180,7 +181,7 @@ function toggleDraw(mode, btn) {
   document.querySelectorAll(".draw-btn").forEach(b => b.classList.toggle("active", b === btn));
   const banner = $("drawBanner");
   banner.classList.add("show");
-  if (mode === "hydrant" || mode === "manhole") {
+  if (mode === "hydrant" || mode === "manhole" || mode === "valve") {
     banner.innerHTML = `Tap the map to place the ${mode} <button id="drawCancel">Cancel</button>`;
   } else {
     banner.innerHTML = `Tap along the ${mode} line, then <button id="drawFinish">Finish</button> <button id="drawCancel">Cancel</button>`;
@@ -205,6 +206,8 @@ function onMapDrawClick(e) {
     endDraw(); openHydrantModal({ lat, lng });
   } else if (drawMode === "manhole") {
     endDraw(); openManholeModal({ lat, lng });
+  } else if (drawMode === "valve") {
+    endDraw(); openValveModal({ lat, lng });
   } else {
     // tracing a line
     drawPath.push([lat, lng]);
@@ -635,7 +638,7 @@ function showView(v) {
   $("pageView").style.display = v === "map" ? "none" : "block";
   $("navTabs").querySelectorAll(".nav-tab").forEach(t => t.classList.toggle("active", t.dataset.view === v));
   if (v === "map" && map) setTimeout(() => map.invalidateSize(), 100);
-  const render = { list: pgList, water: () => pgLeaks("water"), sewer: () => pgLeaks("sewer"), intake: pgIntake, schedule: pgSchedule, inventory: pgInventory, equipment: pgEquipment, valves: pgValves, staff: pgStaff, reports: pgReports, settings: pgSettings }[v];
+  const render = { list: pgList, water: () => pgLeaks("water"), sewer: () => pgLeaks("sewer"), intake: pgIntake, schedule: pgSchedule, inventory: pgInventory, equipment: pgEquipment, staff: pgStaff, reports: pgReports, settings: pgSettings }[v];
   if (render) render();
 }
 
@@ -774,7 +777,7 @@ function pgEquipment() {
   const ownedRows = owned.map(e => {
     const pct = Math.min(100, Math.round(e.run_hours / (e.service_at || 1) * 100));
     const color = e.status === "due_soon" ? "var(--amber)" : pct > 90 ? "var(--red)" : "var(--green)";
-    return `<tr data-eq="${e.id}" style="cursor:pointer"><td style="font-weight:600">${esc(e.name)}</td><td>${fmt(e.hourly_rate)}/hr</td><td>${Number(e.run_hours).toLocaleString()} hr</td>
+    return `<tr data-eq="${e.id}" style="cursor:pointer"><td style="font-weight:600">${esc(e.name)}${e.make_model ? `<br><span style="font-size:11px;color:var(--txt3)">${esc(e.make_model)}</span>` : ""}</td><td>${fmt(e.hourly_rate)}/hr</td><td>${Number(e.run_hours).toLocaleString()} hr</td>
       <td><div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${color}"></div></div>${Number(e.service_at).toLocaleString()} hr</td>
       <td>${e.status === "due_soon" ? `<span class="low-stock">⚠ Service Due</span>` : `<span style="color:var(--green-txt)">In Service</span>`}</td></tr>`;
   }).join("");
@@ -788,7 +791,8 @@ function pgEquipment() {
     <div class="data-card"><table class="data-table"><thead><tr><th>Equipment</th><th>Rate</th><th>Run Hours</th><th>Next Service</th><th>Status</th></tr></thead><tbody>${ownedRows || `<tr><td colspan="5" style="color:var(--txt3)">None yet</td></tr>`}</tbody></table></div>
     <h3 style="font-size:15px;font-weight:700;margin-bottom:10px">Rented Equipment</h3>
     <div class="data-card"><table class="data-table"><thead><tr><th>Equipment</th><th>Vendor</th><th>Rate</th></tr></thead><tbody>${rentedRows || `<tr><td colspan="3" style="color:var(--txt3)">No rentals</td></tr>`}</tbody></table></div>
-    <p style="font-size:13px;color:var(--txt3)">Tap any equipment to edit its rate, ownership, or details. Rented units can be switched to owned (and vice-versa) anytime.</p>`;
+    <p style="font-size:13px;color:var(--txt3)">Tap any equipment to edit its rate, ownership, or details. Rented units can be switched to owned (and vice-versa) anytime.</p>
+    <a href="https://www.fema.gov/assistance/public/tools-resources/schedule-equipment-rates" target="_blank" rel="noopener" class="ghost-btn" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;margin-top:8px">📋 FEMA Schedule of Equipment Rates</a>`;
   $("addEquip").onclick = () => openEquipModal();
   $("pageContent").querySelectorAll("tr[data-eq]").forEach(t => t.onclick = () => openEquipModal(equipment.find(e => e.id === t.dataset.eq)));
 }
@@ -804,9 +808,17 @@ function openEquipModal(e) {
       <div class="form-group"><label>Rate ($/hour) *</label><input class="form-control" id="e-rate" type="number" step="0.01" value="${e.hourly_rate ?? ""}" placeholder="45"></div>
     </div>
     <div class="form-group" id="e-vendor-row"><label>Rental Vendor</label><input class="form-control" id="e-vendor" value="${esc(e.vendor || "")}" placeholder="e.g. United Rentals"></div>
-    <div class="form-grid">
-      <div class="form-group"><label>Run Hours (owned)</label><input class="form-control" id="e-hours" type="number" step="1" value="${e.run_hours ?? 0}"></div>
-      <div class="form-group"><label>Next Service At (hrs)</label><input class="form-control" id="e-service" type="number" step="1" value="${e.service_at ?? 0}"></div>
+    <div id="e-owned-fields">
+      <div class="form-group"><label>Make / Model</label><input class="form-control" id="e-makemodel" value="${esc(e.make_model || "")}" placeholder="e.g. 2024 Ford F-550"></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Purchase Date</label><input class="form-control" id="e-pdate" type="date" value="${e.purchase_date || ""}"></div>
+        <div class="form-group"><label>Purchase Price ($)</label><input class="form-control" id="e-pprice" type="number" step="0.01" value="${e.purchase_price ?? ""}"></div>
+      </div>
+      <div class="form-group"><label>VIN / Serial #</label><input class="form-control" id="e-vin" value="${esc(e.vin_serial || "")}" placeholder="optional"></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Run Hours</label><input class="form-control" id="e-hours" type="number" step="1" value="${e.run_hours ?? 0}"></div>
+        <div class="form-group"><label>Next Service At (hrs)</label><input class="form-control" id="e-service" type="number" step="1" value="${e.service_at ?? 0}"></div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="action-btn btn-primary" id="saveEquip">Save</button>
@@ -814,7 +826,11 @@ function openEquipModal(e) {
     </div>
     ${e.id ? `<button class="ghost-btn" id="delEquip" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Delete equipment</button>` : ""}`;
   $("modalOverlay").classList.add("open");
-  const toggleVendor = () => { $("e-vendor-row").style.display = $("e-own").value === "rented" ? "block" : "none"; };
+  const toggleVendor = () => {
+    const rented = $("e-own").value === "rented";
+    $("e-vendor-row").style.display = rented ? "block" : "none";
+    $("e-owned-fields").style.display = rented ? "none" : "block";
+  };
   $("e-own").onchange = toggleVendor; toggleVendor();
   $("cancelEquip").onclick = closeModal;
   if (e.id) $("delEquip").onclick = async () => { if (confirm(`Delete "${e.name}"?`)) { await api.deleteEquipment(e.id); closeModal(); await refreshAll(); pgEquipment(); } };
@@ -823,6 +839,10 @@ function openEquipModal(e) {
     const own = $("e-own").value;
     const rec = { name, ownership: own, hourly_rate: parseFloat($("e-rate").value) || 0,
       vendor: own === "rented" ? $("e-vendor").value.trim() : null,
+      make_model: own === "owned" ? $("e-makemodel").value.trim() : null,
+      purchase_date: own === "owned" && $("e-pdate").value ? $("e-pdate").value : null,
+      purchase_price: own === "owned" && $("e-pprice").value !== "" ? parseFloat($("e-pprice").value) : null,
+      vin_serial: own === "owned" ? $("e-vin").value.trim() : null,
       run_hours: parseFloat($("e-hours").value) || 0, service_at: parseFloat($("e-service").value) || 0,
       status: own === "rented" ? "rental" : "in_service" };
     if (e.id) rec.id = e.id;
@@ -1059,7 +1079,7 @@ async function openValveModal(v) {
     $("gisValve").onclick = () => openCityGIS(v.lat, v.lng);
     $("delValve").onclick = async () => {
       if (!confirm("Delete this valve permanently?")) return;
-      await api.deleteValve(v.id); closeModal(); await refreshAll(); pgValves();
+      await api.deleteValve(v.id); closeModal(); await refreshAll();
     };
     $("v-photoInput").onchange = async e => {
       const file = e.target.files[0]; if (!file) return;
@@ -1081,7 +1101,7 @@ async function openValveModal(v) {
     if (v.id) rec.id = v.id;
     try {
       await api.saveValve(rec);
-      closeModal(); await refreshAll(); pgValves();
+      closeModal(); await refreshAll();
     } catch (err) { alert("Save failed: " + err.message); }
   };
 }
