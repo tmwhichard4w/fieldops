@@ -135,6 +135,28 @@ export async function saveValve(valve) {
 }
 export async function deleteValve(id) { return db.from("valves").delete().eq("id", id); }
 
+// ---------- GIS: HYDRANTS / MANHOLES / MAINS ----------
+export async function listHydrants() { const { data } = await db.from("hydrants").select("*").order("created_at", { ascending: false }); return data || []; }
+export async function saveHydrant(h) {
+  if (h.id) { const { error } = await db.from("hydrants").update(h).eq("id", h.id); if (error) throw error; return h.id; }
+  const { data, error } = await db.from("hydrants").insert(h).select().single(); if (error) throw error; return data.id;
+}
+export async function deleteHydrant(id) { return db.from("hydrants").delete().eq("id", id); }
+
+export async function listManholes() { const { data } = await db.from("manholes").select("*").order("created_at", { ascending: false }); return data || []; }
+export async function saveManhole(m) {
+  if (m.id) { const { error } = await db.from("manholes").update(m).eq("id", m.id); if (error) throw error; return m.id; }
+  const { data, error } = await db.from("manholes").insert(m).select().single(); if (error) throw error; return data.id;
+}
+export async function deleteManhole(id) { return db.from("manholes").delete().eq("id", id); }
+
+export async function listMains() { const { data } = await db.from("mains").select("*").order("created_at", { ascending: false }); return data || []; }
+export async function saveMain(m) {
+  if (m.id) { const { error } = await db.from("mains").update(m).eq("id", m.id); if (error) throw error; return m.id; }
+  const { data, error } = await db.from("mains").insert(m).select().single(); if (error) throw error; return data.id;
+}
+export async function deleteMain(id) { return db.from("mains").delete().eq("id", id); }
+
 // ---------- NOTIFICATION SETTINGS ----------
 export async function getNotifySettings() {
   const { data } = await db.from("notification_settings").select("*").eq("id", 1).single();
