@@ -139,6 +139,12 @@ export async function markRequestConverted(id, woId) {
 }
 export async function deleteRequest(id) { return db.from("requests").delete().eq("id", id); }
 
+// Build a public URL for a stored photo path (used for citizen request photos).
+export function publicPhotoUrl(path) {
+  if (!path) return null;
+  return db.storage.from("wo-photos").getPublicUrl(path).data.publicUrl;
+}
+
 // ---------- SCHEDULE ----------
 export async function listSchedules() {
   const { data } = await db.from("schedules").select("*").order("next_due");

@@ -682,9 +682,10 @@ function pgLeaks(kind) {
 }
 
 function pgIntake() {
+  const photoUrl = p => api.publicPhotoUrl(p);
   const rows = requests.map(r => `<tr><td style="font-family:monospace;font-size:12px;color:var(--txt3)">${esc(r.id.slice(0, 8))}</td>
     <td><div style="font-weight:600">${esc(r.resident || "")}</div><div style="font-size:12px;color:var(--txt3)">${esc(r.phone || "")}</div></td>
-    <td style="font-size:13px">${esc(r.address || "")}</td><td style="font-size:13px">${esc(r.issue || "")}</td><td style="font-size:12px">${fmtDT(r.reported_at)}</td>
+    <td style="font-size:13px">${esc(r.address || "")}</td><td style="font-size:13px">${esc(r.issue || "")}${r.photo_path ? ` <a href="${esc(photoUrl(r.photo_path))}" target="_blank" style="color:var(--blue-txt);font-weight:600;white-space:nowrap">📷 photo</a>` : ""}</td><td style="font-size:12px">${fmtDT(r.reported_at)}</td>
     <td>${r.status === "converted" ? `<span class="badge badge-done">→ Work Order</span>` : `<button class="add-line-btn" data-req="${r.id}">Create Order</button>`} <span class="del-req" data-del="${r.id}" style="color:var(--red-txt);cursor:pointer;margin-left:8px;font-weight:600">✕</span></td></tr>`).join("");
   $("pageContent").innerHTML = `<div class="page-head"><h2>📞 Citizen Requests</h2><button class="new-btn" id="newReq"><svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px"><path d="M8 3v10M3 8h10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg><span>Log Call</span></button></div>
     <div class="data-card"><table class="data-table"><thead><tr><th>ID</th><th>Resident</th><th>Address</th><th>Issue</th><th>Reported</th><th>Action</th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="color:var(--txt3)">No open requests</td></tr>`}</tbody></table></div>
