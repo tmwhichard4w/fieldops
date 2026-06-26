@@ -232,10 +232,10 @@ async function finishLine() {
 // ============================================================
 // COSTS
 // ============================================================
-const laborCost = rows => rows.reduce((s, l) => s + l.reg_hours * l.rate + l.ot_hours * l.rate * OT_MULTIPLIER, 0);
-const laborHrs  = rows => rows.reduce((s, l) => s + Number(l.reg_hours) + Number(l.ot_hours), 0);
-const equipCost = rows => rows.reduce((s, e) => s + e.hours * e.rate, 0);
-const rentCost  = rows => rows.reduce((s, e) => s + (e.ownership === "rented" ? e.hours * e.rate : 0), 0);
+const laborCost = rows => 0; // labor is no longer costed (who-worked-it only)
+const laborHrs  = rows => 0; // hours no longer tracked
+const equipCost = rows => rows.reduce((s, e) => s + (Number(e.manual_cost) || 0), 0); // optional manual cost only
+const rentCost  = rows => rows.reduce((s, e) => s + (e.ownership === "rented" ? (Number(e.manual_cost) || 0) : 0), 0);
 const matCost   = rows => rows.reduce((s, m) => s + m.qty * m.unit_cost, 0);
 
 // ============================================================
@@ -376,8 +376,8 @@ function showDetail(o) {
       <div class="detail-field"><div class="field-label">${isWater(o) ? "Boil Notice" : "SSO Reported"}</div><div class="field-value" style="color:${o.leak.notice === "Yes" ? "var(--red)" : "var(--txt)"}">${esc(o.leak.notice)}</div></div>
     </div>` : "";
 
-  const laborRows = logs.labor.map(l => `<tr><td>${esc(l.worker)}</td><td>${l.reg_hours} hr</td><td>${l.ot_hours} hr</td><td>${fmt(l.reg_hours * l.rate + l.ot_hours * l.rate * OT_MULTIPLIER)}</td><td><span class="del" data-t="labor_log" data-id="${l.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="5" style="color:var(--txt3)">No labor logged</td></tr>`;
-  const equipRows = logs.equip.map(e => `<tr><td>${esc(e.equipment_name)} <span class="badge badge-${e.ownership === "rented" ? "rented" : "owned"}">${e.ownership}</span>${e.assigned_to ? `<br><span style="font-size:11px;color:var(--txt3)">👤 ${esc(e.assigned_to)} ${e.safety_confirmed ? '<span style="color:var(--green-txt)">· ✓ safety</span>' : '<span style="color:var(--red-txt)">· ⚠ safety not confirmed</span>'}</span>` : ""}</td><td>${e.hours} hr</td><td>${fmt(e.hours * e.rate)}</td><td><span class="del" data-t="equipment_log" data-id="${e.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--txt3)">No equipment logged</td></tr>`;
+  const laborRows = logs.labor.map(l => `<tr><td>${esc(l.worker)}</td><td><span class="del" data-t="labor_log" data-id="${l.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="2" style="color:var(--txt3)">No workers added</td></tr>`;
+  const equipRows = logs.equip.map(e => `<tr><td>${esc(e.equipment_name)} <span class="badge badge-${e.ownership === "rented" ? "rented" : "owned"}">${e.ownership}</span>${e.assigned_to ? `<br><span style="font-size:11px;color:var(--txt3)">👤 ${esc(e.assigned_to)} ${e.safety_confirmed ? '<span style="color:var(--green-txt)">· ✓ safety</span>' : '<span style="color:var(--red-txt)">· ⚠ safety not confirmed</span>'}</span>` : ""}</td><td>${e.hours} hr</td><td>${e.manual_cost != null ? fmt(e.manual_cost) : "—"}</td><td><span class="del" data-t="equipment_log" data-id="${e.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--txt3)">No equipment logged</td></tr>`;
   const matRows = logs.mat.map(m => `<tr><td>${esc(m.item_name)}</td><td>${m.qty}</td><td>${fmt(m.qty * m.unit_cost)}</td><td><span class="del" data-t="material_log" data-id="${m.id}" style="color:var(--red-txt);cursor:pointer">✕</span></td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--txt3)">No materials logged</td></tr>`;
   const photoHtml = photos.map(p => `<div class="photo-thumb"><img src="${p.url}" alt="${esc(p.label)}"></div>`).join("");
 
@@ -397,15 +397,15 @@ function showDetail(o) {
     <div class="detail-notes"><div class="field-label" style="margin-bottom:6px">📍 ${esc(o.address || "")}</div><p>${esc(o.notes || "")}</p>
       ${o.equip_needed ? `<div style="margin-top:8px"><span class="field-label">🚜 Equipment Needed: </span><span style="font-size:13px">${esc(o.equip_needed)}</span></div>` : ""}</div>
     ${leakBlock}
-    <div class="section-title">👷 Labor / Man-Hours <button class="add-line-btn" data-line="labor" style="margin-left:auto">+ Add</button></div>
-    <table class="log-table"><thead><tr><th>Worker</th><th>Reg</th><th>OT</th><th>Cost</th><th></th></tr></thead><tbody>${laborRows}</tbody></table>
+    <div class="section-title">👷 Who Worked It <button class="add-line-btn" data-line="labor" style="margin-left:auto">+ Add</button></div>
+    <table class="log-table"><thead><tr><th>Worker / Crew</th><th></th></tr></thead><tbody>${laborRows}</tbody></table>
     <div class="section-title">🚜 Equipment (owned & rented) <button class="add-line-btn" data-line="equip" style="margin-left:auto">+ Add</button></div>
     <table class="log-table"><thead><tr><th>Equipment</th><th>Hours</th><th>Cost</th><th></th></tr></thead><tbody>${equipRows}</tbody></table>
     <div class="section-title">📦 Materials / Consumables <button class="add-line-btn" data-line="mat" style="margin-left:auto">+ Add</button></div>
     <table class="log-table"><thead><tr><th>Item</th><th>Qty</th><th>Cost</th><th></th></tr></thead><tbody>${matRows}</tbody></table>
     <div class="section-title">📷 Photos</div>
     <div class="photo-row">${photoHtml}<label class="photo-thumb photo-add"><svg viewBox="0 0 24 24" fill="none"><path d="M12 6v12M6 12h12" stroke-linecap="round"/></svg>Add<input type="file" accept="image/*" capture="environment" id="photoInput" style="display:none"></label></div>
-    <div class="cost-summary"><div><div class="field-label">Total Job Cost</div><div style="font-size:12px;color:var(--blue-txt);opacity:.8">Labor ${fmt(laborCost(logs.labor))} · Equip ${fmt(equipCost(logs.equip))} · Mat ${fmt(matCost(logs.mat))}</div></div><div class="cost-total">${fmt(total)}</div></div>
+    <div class="cost-summary"><div><div class="field-label">Total Job Cost</div><div style="font-size:12px;color:var(--blue-txt);opacity:.8">Equipment ${fmt(equipCost(logs.equip))} · Materials ${fmt(matCost(logs.mat))}</div></div><div class="cost-total">${fmt(total)}</div></div>
     <div class="detail-actions">
       ${o.status !== "completed" ? `<button class="action-btn btn-complete" data-status="completed">✓ Complete</button>` : ""}
       ${o.status === "new" ? `<button class="action-btn btn-primary" data-status="in_progress">Start Work</button>` : ""}
@@ -570,16 +570,14 @@ function openLineModal(o, type) {
   const crews = staffNames();
   let body, title;
   if (type === "labor") {
-    title = "Log Labor / Man-Hours";
-    body = `<div class="form-group"><label>Worker / Crew</label><select class="form-control" id="l-who">${crews.map(c => `<option>${c}</option>`).join("")}</select></div>
-      <div class="form-grid"><div class="form-group"><label>Regular Hours</label><input class="form-control" id="l-reg" type="number" step="0.5" value="1"></div>
-      <div class="form-group"><label>OT Hours</label><input class="form-control" id="l-ot" type="number" step="0.5" value="0"></div></div>
-      <div class="form-group"><label>Rate ($/hr)</label><input class="form-control" id="l-rate" type="number" step="0.5" value="30"></div>`;
+    title = "Add Worker / Crew";
+    body = `<div class="form-group"><label>Who worked this job?</label><select class="form-control" id="l-who">${crews.map(c => `<option>${c}</option>`).join("")}</select></div>`;
   } else if (type === "equip") {
     title = "Log Equipment Used";
     const people = staffNames();
-    body = `<div class="form-group"><label>Equipment</label><select class="form-control" id="l-eq">${equipment.map(e => `<option value="${e.id}">${esc(e.name)} — ${e.ownership} · ${fmt(e.hourly_rate)}/hr</option>`).join("")}</select></div>
+    body = `<div class="form-group"><label>Equipment</label><select class="form-control" id="l-eq">${equipment.map(e => `<option value="${e.id}">${esc(e.name)} — ${e.ownership}</option>`).join("")}</select></div>
       <div class="form-group"><label>Hours Used</label><input class="form-control" id="l-hrs" type="number" step="0.5" value="1"></div>
+      <div class="form-group"><label>Cost (optional)</label><input class="form-control" id="l-cost" type="number" step="0.01" placeholder="leave blank if not tracking"></div>
       <div class="form-group"><label>Signed out to (employee)</label><select class="form-control" id="l-assigned">${people.map(p => `<option>${esc(p)}</option>`).join("")}</select></div>
       <label style="display:flex;align-items:center;gap:10px;background:var(--amber-bg);border:1px solid #fcd34d;border-radius:8px;padding:12px;cursor:pointer">
         <input type="checkbox" id="l-safety" style="width:20px;height:20px;flex-shrink:0">
@@ -599,7 +597,7 @@ function openLineModal(o, type) {
 async function submitLine(o, type) {
   try {
     if (type === "labor") {
-      await api.addLabor({ work_order_id: o.id, worker: $("l-who").value, reg_hours: +$("l-reg").value || 0, ot_hours: +$("l-ot").value || 0, rate: +$("l-rate").value || 30 });
+      await api.addLabor({ work_order_id: o.id, worker: $("l-who").value, reg_hours: 0, ot_hours: 0, rate: 0 });
     } else if (type === "equip") {
       const eq = equipment.find(e => e.id === $("l-eq").value); const hrs = +$("l-hrs").value || 0;
       const assigned = $("l-assigned") ? $("l-assigned").value : null;
@@ -607,6 +605,7 @@ async function submitLine(o, type) {
       await api.addEquipUse({
         work_order_id: o.id, equipment_id: eq.id, equipment_name: eq.name, hours: hrs,
         rate: eq.hourly_rate, ownership: eq.ownership, assigned_to: assigned,
+        manual_cost: $("l-cost") && $("l-cost").value !== "" ? parseFloat($("l-cost").value) : null,
         safety_confirmed: safety,
         safety_confirmed_by: safety ? assigned : null,
         safety_confirmed_at: safety ? new Date().toISOString() : null
@@ -796,10 +795,9 @@ function openEquipModal(e) {
 function pgStaff() {
   const rows = staff.map(s => `<tr data-staff="${s.id}" style="cursor:pointer">
     <td style="font-weight:600">${esc(s.full_name)}</td>
-    <td><span class="badge badge-pw">${esc(s.role)}</span></td>
-    <td>${fmt(s.labor_rate)}/hr</td></tr>`).join("");
+    <td><span class="badge badge-pw">${esc(s.role)}</span></td></tr>`).join("");
   $("pageContent").innerHTML = `<div class="page-head"><h2>👷 Staff & Crews</h2><button class="new-btn" id="addStaff"><svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px"><path d="M8 3v10M3 8h10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg><span>Add Person/Crew</span></button></div>
-    <div class="data-card"><table class="data-table"><thead><tr><th>Name</th><th>Role</th><th>Labor Rate</th></tr></thead><tbody>${rows || `<tr><td colspan="3" style="color:var(--txt3)">No staff yet — add your employees and crews.</td></tr>`}</tbody></table></div>
+    <div class="data-card"><table class="data-table"><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody>${rows || `<tr><td colspan="2" style="color:var(--txt3)">No staff yet — add your employees and crews.</td></tr>`}</tbody></table></div>
     <p style="font-size:13px;color:var(--txt3)">Everyone here shows up in the "Assigned To" and worker dropdowns on work orders. Add real employees and crew names; tap any to edit or remove.</p>`;
   $("addStaff").onclick = () => openStaffModal();
   $("pageContent").querySelectorAll("tr[data-staff]").forEach(t => t.onclick = () => openStaffModal(staff.find(s => s.id === t.dataset.staff)));
@@ -811,10 +809,7 @@ function openStaffModal(s) {
   $("modalBox").innerHTML = `
     <h2>${s.id ? "Edit" : "Add"} Person / Crew</h2>
     <div class="form-group"><label>Name *</label><input class="form-control" id="s-name" value="${esc(s.full_name || "")}" placeholder="e.g. John Martinez or Crew A"></div>
-    <div class="form-grid">
-      <div class="form-group"><label>Role</label><select class="form-control" id="s-role">${sel(["field", "office", "admin"], s.role || "field")}</select></div>
-      <div class="form-group"><label>Labor Rate ($/hr)</label><input class="form-control" id="s-rate" type="number" step="0.01" value="${s.labor_rate ?? 30}"></div>
-    </div>
+    <div class="form-group"><label>Role</label><select class="form-control" id="s-role">${sel(["field", "office", "admin"], s.role || "field")}</select></div>
     <div class="modal-actions">
       <button class="action-btn btn-primary" id="saveStaff">Save</button>
       <button class="action-btn btn-secondary" id="cancelStaff">Cancel</button>
@@ -825,7 +820,7 @@ function openStaffModal(s) {
   if (s.id) $("delStaff").onclick = async () => { if (confirm(`Remove ${s.full_name}? They'll disappear from dropdowns but past records stay intact.`)) { await api.deleteStaff(s.id); closeModal(); await refreshAll(); pgStaff(); } };
   $("saveStaff").onclick = async () => {
     const name = $("s-name").value.trim(); if (!name) { alert("Enter a name."); return; }
-    const rec = { full_name: name, role: $("s-role").value, labor_rate: parseFloat($("s-rate").value) || 30, active: true };
+    const rec = { full_name: name, role: $("s-role").value, active: true };
     if (s.id) rec.id = s.id;
     try { await api.saveStaff(rec); closeModal(); await refreshAll(); pgStaff(); } catch (err) { alert("Save failed: " + err.message); }
   };
@@ -849,12 +844,10 @@ async function pgReports() {
       <div style="font-size:13px;font-weight:600;width:24px">${n}</div></div>`).join("");
   $("pageContent").innerHTML = `<div class="page-head"><h2>Reports & Cost Summary</h2></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:24px">
-      <div class="stat-card stat-blue"><div class="stat-num">${fmt(tLabor)}</div><div class="stat-lbl">Labor</div></div>
       <div class="stat-card stat-amber"><div class="stat-num">${fmt(tEquip)}</div><div class="stat-lbl">Equipment</div></div>
       <div class="stat-card stat-amber"><div class="stat-num">${fmt(tRent)}</div><div class="stat-lbl">of which Rental</div></div>
       <div class="stat-card stat-green"><div class="stat-num">${fmt(tMat)}</div><div class="stat-lbl">Materials</div></div>
-      <div class="stat-card"><div class="stat-num">${fmt(tLabor + tEquip + tMat)}</div><div class="stat-lbl">Total Op Cost</div></div>
-      <div class="stat-card"><div class="stat-num">${Math.round(tHrs)}</div><div class="stat-lbl">Man-Hours</div></div>
+      <div class="stat-card"><div class="stat-num">${fmt(tEquip + tMat)}</div><div class="stat-lbl">Total Op Cost</div></div>
       <div class="stat-card"><div class="stat-num">${avgResp.toFixed(1)}h</div><div class="stat-lbl">Avg Response</div></div></div>
     <div class="data-card" style="padding:16px"><div style="font-size:15px;font-weight:700;margin-bottom:14px">Work Orders by Type</div>${bars}</div>
     <div style="margin-bottom:16px"><div class="data-card" style="padding:16px">
