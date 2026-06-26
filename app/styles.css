@@ -167,3 +167,17 @@ textarea.form-control{resize:vertical;min-height:70px}
   .form-grid,.form-grid-3{grid-template-columns:1fr}
 }
 .leaflet-popup-content{margin:10px 14px;font-family:inherit}
+
+/* GIS draw toolbar */
+.draw-toolbar{position:absolute;top:12px;left:12px;z-index:500;display:flex;gap:6px;flex-wrap:wrap;max-width:60%}
+.draw-btn{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:var(--shadow);display:flex;align-items:center;gap:5px;color:var(--txt2)}
+.draw-btn span{display:inline}
+.draw-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.draw-banner{position:absolute;top:56px;left:50%;transform:translateX(-50%);z-index:550;background:var(--blue);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;box-shadow:var(--shadow);display:none;align-items:center;gap:12px;white-space:nowrap}
+.draw-banner.show{display:flex}
+.draw-banner button{background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:14px;padding:4px 12px;font-size:13px;font-weight:600;cursor:pointer}
+@media(max-width:760px){
+  .draw-toolbar{max-width:none;left:8px;top:8px}
+  .draw-btn span{display:none}
+  .draw-btn{padding:8px}
+}

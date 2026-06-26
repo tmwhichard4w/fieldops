@@ -30,6 +30,11 @@ function respTime(o) {
 
 // ---------- state ----------
 let orders = [], equipment = [], inventory = [], requests = [], schedules = [], valves = [];
+let hydrants = [], manholes = [], mains = [];
+let gisLayer = null;            // leaflet layer group holding hydrants/manholes/mains
+let drawMode = null;            // null | 'hydrant' | 'manhole' | 'water' | 'sewer'
+let drawPath = [];              // points collected while tracing a line
+let drawTemp = null;            // temporary polyline while drawing
 let logs = { labor: [], equip: [], mat: [] }, photos = [];
 let filterStatus = "all", selectedId = null, editingId = null, prefillReq = null;
 let map, markers = {};
@@ -72,6 +77,7 @@ async function startApp() {
   $("zoomOut").onclick = () => map.zoomOut();
   $("fitAll").onclick = fitAll;
   $("cityGis").onclick = () => openCityGIS(map.getCenter().lat, map.getCenter().lng);
+  setupDrawTools();
   await refreshAll();
   showView("map");
 }
@@ -80,6 +86,9 @@ async function refreshAll() {
   [orders, equipment, inventory, requests, schedules, valves] = await Promise.all([
     api.listWorkOrders(), api.listEquipment(), api.listInventory(),
     api.listRequests(), api.listSchedules(), api.listValves()
+  ]);
+  [hydrants, manholes, mains] = await Promise.all([
+    api.listHydrants(), api.listManholes(), api.listMains()
   ]);
   // flatten leak_details (Supabase returns it as array)
   orders.forEach(o => { o.leak = (o.leak_details && o.leak_details[0]) || null; });
@@ -131,6 +140,71 @@ function fitAll() {
 }
 
 // ============================================================
+// DRAW TOOLS — place hydrants/manholes, trace water/sewer lines
+// ============================================================
+function setupDrawTools() {
+  document.querySelectorAll(".draw-btn").forEach(b => b.onclick = () => toggleDraw(b.dataset.draw, b));
+  map.on("click", onMapDrawClick);
+}
+
+function toggleDraw(mode, btn) {
+  // turning the same one off
+  if (drawMode === mode) { endDraw(); return; }
+  endDraw();
+  drawMode = mode;
+  document.querySelectorAll(".draw-btn").forEach(b => b.classList.toggle("active", b === btn));
+  const banner = $("drawBanner");
+  banner.classList.add("show");
+  if (mode === "hydrant" || mode === "manhole") {
+    banner.innerHTML = `Tap the map to place the ${mode} <button id="drawCancel">Cancel</button>`;
+  } else {
+    banner.innerHTML = `Tap along the ${mode} line, then <button id="drawFinish">Finish</button> <button id="drawCancel">Cancel</button>`;
+  }
+  const fin = $("drawFinish"); if (fin) fin.onclick = finishLine;
+  $("drawCancel").onclick = endDraw;
+  map.getContainer().style.cursor = "crosshair";
+}
+
+function endDraw() {
+  drawMode = null; drawPath = [];
+  if (drawTemp) { map.removeLayer(drawTemp); drawTemp = null; }
+  document.querySelectorAll(".draw-btn").forEach(b => b.classList.remove("active"));
+  $("drawBanner").classList.remove("show");
+  if (map) map.getContainer().style.cursor = "";
+}
+
+function onMapDrawClick(e) {
+  if (!drawMode) return;
+  const { lat, lng } = e.latlng;
+  if (drawMode === "hydrant") {
+    endDraw(); openHydrantModal({ lat, lng });
+  } else if (drawMode === "manhole") {
+    endDraw(); openManholeModal({ lat, lng });
+  } else {
+    // tracing a line
+    drawPath.push([lat, lng]);
+    const color = drawMode === "sewer" ? "#16a34a" : "#0891b2";
+    if (drawTemp) map.removeLayer(drawTemp);
+    drawTemp = L.polyline(drawPath, { color, weight: 4, opacity: 0.7, dashArray: "6 6" }).addTo(map);
+    L.circleMarker([lat, lng], { radius: 4, color, fillColor: "#fff", fillOpacity: 1 }).addTo(drawTemp);
+  }
+}
+
+async function finishLine() {
+  if (drawPath.length < 2) { alert("Tap at least two points to make a line."); return; }
+  const kind = drawMode;
+  const path = [...drawPath];
+  endDraw();
+  // ask for line details
+  const size = prompt(`${kind === "sewer" ? "Sewer" : "Water"} line size (e.g. 6\"):`, '6"') || "";
+  const material = prompt("Pipe material (PVC, Ductile Iron, Clay, etc.):", "PVC") || "";
+  try {
+    await api.saveMain({ kind, size, material, path });
+    await refreshAll();
+  } catch (err) { alert("Save failed: " + err.message); }
+}
+
+// ============================================================
 // COSTS
 // ============================================================
 const laborCost = rows => rows.reduce((s, l) => s + l.reg_hours * l.rate + l.ot_hours * l.rate * OT_MULTIPLIER, 0);
@@ -176,6 +250,50 @@ function renderOrders() {
     m.bindPopup(`<b>${esc(o.title)}</b><br><span style="font-size:12px;color:#666">${esc(o.wo_number)} · ${esc(o.status)}</span>`);
     m.on("click", () => selectOrder(o.id));
     markers[o.id] = m;
+  });
+  renderGisLayer();
+}
+
+// Draw hydrants, manholes, and mains on the main map.
+function renderGisLayer() {
+  if (!map) return;
+  if (gisLayer) { map.removeLayer(gisLayer); }
+  gisLayer = L.layerGroup().addTo(map);
+
+  // mains (lines)
+  mains.forEach(ln => {
+    const path = Array.isArray(ln.path) ? ln.path : JSON.parse(ln.path || "[]");
+    if (path.length < 2) return;
+    const color = ln.kind === "sewer" ? "#16a34a" : "#0891b2";
+    const poly = L.polyline(path, { color, weight: 4, opacity: 0.8, dashArray: ln.kind === "sewer" ? "1" : null }).addTo(gisLayer);
+    poly.bindPopup(`<b>${ln.kind === "sewer" ? "Sewer" : "Water"} main</b><br><span style="font-size:12px;color:#666">${esc(ln.size || "")} ${esc(ln.material || "")}</span><br><span style="font-size:11px;color:#999">Tap to delete</span>`);
+    poly.on("click", () => { if (confirm("Delete this line?")) api.deleteMain(ln.id).then(refreshAll); });
+  });
+
+  // hydrants (triangle-ish red marker)
+  hydrants.forEach(h => {
+    if (!h.lat || !h.lng) return;
+    const icon = L.divIcon({ html: `<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:15px solid #dc2626;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))"></div>`, iconSize: [16, 15], iconAnchor: [8, 13], className: "" });
+    const m = L.marker([h.lat, h.lng], { icon }).addTo(gisLayer);
+    m.bindPopup(`<b>🔥 Hydrant ${esc(h.tag || "")}</b><br><span style="font-size:12px;color:#666">${esc(h.condition || "")}${h.flow_gpm ? " · " + esc(h.flow_gpm) + " gpm" : ""}</span>`);
+    m.on("click", () => openHydrantModal(h));
+  });
+
+  // manholes (dark circle with ring)
+  manholes.forEach(mh => {
+    if (!mh.lat || !mh.lng) return;
+    const icon = L.divIcon({ html: `<div style="width:14px;height:14px;border-radius:50%;background:#374151;border:3px solid #9ca3af;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`, iconSize: [14, 14], iconAnchor: [7, 7], className: "" });
+    const m = L.marker([mh.lat, mh.lng], { icon }).addTo(gisLayer);
+    m.bindPopup(`<b>⚫ Manhole ${esc(mh.tag || "")}</b><br><span style="font-size:12px;color:#666">${esc(mh.condition || "")}${mh.depth ? " · " + esc(mh.depth) : ""}</span>`);
+    m.on("click", () => openManholeModal(mh));
+  });
+
+  // valves too, so the crew sees everything on one map
+  valves.forEach(v => {
+    if (!v.lat || !v.lng) return;
+    const icon = L.divIcon({ html: `<div style="width:14px;height:14px;background:#7c3aed;border:2.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);transform:rotate(45deg)"></div>`, iconSize: [14, 14], iconAnchor: [7, 7], className: "" });
+    const m = L.marker([v.lat, v.lng], { icon }).addTo(gisLayer);
+    m.bindPopup(`<b>🔧 Valve ${esc(v.valve_tag || "")}</b><br><span style="font-size:12px;color:#666">${esc(v.valve_type)} ${esc(v.size)}</span>`);
   });
 }
 
@@ -791,4 +909,93 @@ async function openValveModal(v) {
       closeModal(); await refreshAll(); pgValves();
     } catch (err) { alert("Save failed: " + err.message); }
   };
+}
+
+// ============================================================
+// HYDRANT & MANHOLE MODALS
+// ============================================================
+function openHydrantModal(h) {
+  h = h || {};
+  const cond = ["Good", "Fair", "Needs Repair", "Out of Service"];
+  const sel = (arr, v) => arr.map(x => `<option ${x === v ? "selected" : ""}>${x}</option>`).join("");
+  const woOpts = `<option value="">— none —</option>` + orders.map(o => `<option value="${o.id}" ${o.id === h.work_order_id ? "selected" : ""}>${esc(o.wo_number)} — ${esc(o.title)}</option>`).join("");
+  $("modalBox").innerHTML = `
+    <h2>${h.id ? "Edit" : "Add"} Hydrant</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>Tag / ID</label><input class="form-control" id="h-tag" value="${esc(h.tag || "")}" placeholder="optional"></div>
+      <div class="form-group"><label>Condition</label><select class="form-control" id="h-cond">${sel(cond, h.condition)}</select></div>
+    </div>
+    <div class="form-group"><label>Flow rating (gpm, optional)</label><input class="form-control" id="h-flow" value="${esc(h.flow_gpm || "")}"></div>
+    <div class="form-group"><label>Location / Address</label><input class="form-control" id="h-addr" value="${esc(h.address || "")}"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>Latitude</label><input class="form-control" id="h-lat" type="number" step="any" value="${h.lat || ""}"></div>
+      <div class="form-group"><label>Longitude</label><input class="form-control" id="h-lng" type="number" step="any" value="${h.lng || ""}"></div>
+    </div>
+    <button class="ghost-btn" id="h-useloc" style="width:100%;margin-bottom:14px">📍 Use my current location</button>
+    <div class="form-group"><label>Linked Work Order</label><select class="form-control" id="h-wo">${woOpts}</select></div>
+    <div class="form-group"><label>Notes</label><textarea class="form-control" id="h-notes">${esc(h.notes || "")}</textarea></div>
+    <div class="modal-actions">
+      <button class="action-btn btn-primary" id="saveHydrant">Save</button>
+      <button class="action-btn btn-secondary" id="cancelHydrant">Cancel</button>
+    </div>
+    ${h.id ? `<button class="ghost-btn" id="delHydrant" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Delete hydrant</button>` : ""}`;
+  $("modalOverlay").classList.add("open");
+  $("cancelHydrant").onclick = closeModal;
+  $("h-useloc").onclick = () => useGeo("h-lat", "h-lng", "h-useloc");
+  if (h.id) $("delHydrant").onclick = async () => { if (confirm("Delete this hydrant?")) { await api.deleteHydrant(h.id); closeModal(); await refreshAll(); } };
+  $("saveHydrant").onclick = async () => {
+    const rec = { tag: $("h-tag").value.trim(), condition: $("h-cond").value, flow_gpm: $("h-flow").value.trim(),
+      address: $("h-addr").value.trim(), lat: parseFloat($("h-lat").value) || null, lng: parseFloat($("h-lng").value) || null,
+      work_order_id: $("h-wo").value || null, notes: $("h-notes").value };
+    if (h.id) rec.id = h.id;
+    try { await api.saveHydrant(rec); closeModal(); await refreshAll(); } catch (e) { alert("Save failed: " + e.message); }
+  };
+}
+
+function openManholeModal(mh) {
+  mh = mh || {};
+  const cond = ["Good", "Fair", "Needs Repair", "Out of Service"];
+  const sel = (arr, v) => arr.map(x => `<option ${x === v ? "selected" : ""}>${x}</option>`).join("");
+  const woOpts = `<option value="">— none —</option>` + orders.map(o => `<option value="${o.id}" ${o.id === mh.work_order_id ? "selected" : ""}>${esc(o.wo_number)} — ${esc(o.title)}</option>`).join("");
+  $("modalBox").innerHTML = `
+    <h2>${mh.id ? "Edit" : "Add"} Manhole</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>Tag / ID</label><input class="form-control" id="m-tag" value="${esc(mh.tag || "")}" placeholder="optional"></div>
+      <div class="form-group"><label>Condition</label><select class="form-control" id="m-cond">${sel(cond, mh.condition)}</select></div>
+    </div>
+    <div class="form-group"><label>Depth (optional)</label><input class="form-control" id="m-depth" value="${esc(mh.depth || "")}" placeholder='e.g. 8 ft'></div>
+    <div class="form-group"><label>Location / Address</label><input class="form-control" id="m-addr" value="${esc(mh.address || "")}"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>Latitude</label><input class="form-control" id="m-lat" type="number" step="any" value="${mh.lat || ""}"></div>
+      <div class="form-group"><label>Longitude</label><input class="form-control" id="m-lng" type="number" step="any" value="${mh.lng || ""}"></div>
+    </div>
+    <button class="ghost-btn" id="m-useloc" style="width:100%;margin-bottom:14px">📍 Use my current location</button>
+    <div class="form-group"><label>Linked Work Order</label><select class="form-control" id="m-wo">${woOpts}</select></div>
+    <div class="form-group"><label>Notes</label><textarea class="form-control" id="m-notes">${esc(mh.notes || "")}</textarea></div>
+    <div class="modal-actions">
+      <button class="action-btn btn-primary" id="saveManhole">Save</button>
+      <button class="action-btn btn-secondary" id="cancelManhole">Cancel</button>
+    </div>
+    ${mh.id ? `<button class="ghost-btn" id="delManhole" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Delete manhole</button>` : ""}`;
+  $("modalOverlay").classList.add("open");
+  $("cancelManhole").onclick = closeModal;
+  $("m-useloc").onclick = () => useGeo("m-lat", "m-lng", "m-useloc");
+  if (mh.id) $("delManhole").onclick = async () => { if (confirm("Delete this manhole?")) { await api.deleteManhole(mh.id); closeModal(); await refreshAll(); } };
+  $("saveManhole").onclick = async () => {
+    const rec = { tag: $("m-tag").value.trim(), condition: $("m-cond").value, depth: $("m-depth").value.trim(),
+      address: $("m-addr").value.trim(), lat: parseFloat($("m-lat").value) || null, lng: parseFloat($("m-lng").value) || null,
+      work_order_id: $("m-wo").value || null, notes: $("m-notes").value };
+    if (mh.id) rec.id = mh.id;
+    try { await api.saveManhole(rec); closeModal(); await refreshAll(); } catch (e) { alert("Save failed: " + e.message); }
+  };
+}
+
+// Shared geolocation helper for the place-asset modals.
+function useGeo(latId, lngId, btnId) {
+  if (!navigator.geolocation) { alert("Location not available on this device."); return; }
+  $(btnId).textContent = "📍 Getting location…";
+  navigator.geolocation.getCurrentPosition(
+    pos => { $(latId).value = pos.coords.latitude.toFixed(6); $(lngId).value = pos.coords.longitude.toFixed(6); $(btnId).textContent = "📍 Location set ✓"; },
+    () => { $(btnId).textContent = "📍 Use my current location"; alert("Couldn't get location. Enter coordinates manually or allow location access."); }
+  );
 }

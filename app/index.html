@@ -52,12 +52,19 @@
         <button class="map-btn" id="fitAll"><svg viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="12" y="3" width="5" height="5" rx="1"/><rect x="3" y="12" width="5" height="5" rx="1"/><rect x="12" y="12" width="5" height="5" rx="1"/></svg></button>
         <button class="map-btn" id="cityGis" title="Open City of Troy GIS map"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 3L1 6v13l6-3 6 3 6-3V3l-6 3-6-3z"/><path d="M7 3v13M13 6v13"/></svg></button>
       </div>
+      <div class="draw-toolbar" id="drawToolbar">
+        <button class="draw-btn" data-draw="hydrant" title="Add hydrant">🔥<span>Hydrant</span></button>
+        <button class="draw-btn" data-draw="manhole" title="Add manhole">⚫<span>Manhole</span></button>
+        <button class="draw-btn" data-draw="water" title="Trace water line">💧<span>Water line</span></button>
+        <button class="draw-btn" data-draw="sewer" title="Trace sewer line">🟢<span>Sewer line</span></button>
+      </div>
+      <div class="draw-banner" id="drawBanner"></div>
       <div class="map-legend">
         <div class="legend-row"><div class="legend-dot" style="background:#0891b2"></div>Water</div>
         <div class="legend-row"><div class="legend-dot" style="background:#16a34a"></div>Sewer</div>
-        <div class="legend-row"><div class="legend-dot" style="background:#dc2626"></div>Urgent</div>
-        <div class="legend-row"><div class="legend-dot" style="background:#d97706"></div>In Progress</div>
-        <div class="legend-row"><div class="legend-dot" style="background:#2563eb"></div>New</div>
+        <div class="legend-row"><div class="legend-dot" style="background:#dc2626"></div>Urgent / Hydrant</div>
+        <div class="legend-row"><div class="legend-dot" style="background:#7c3aed"></div>Valve</div>
+        <div class="legend-row"><div class="legend-dot" style="background:#374151"></div>Manhole</div>
       </div>
       <div class="detail-panel" id="detailPanel"><div class="detail-drag"></div><div class="detail-content" id="detailContent"></div></div>
     </div>
