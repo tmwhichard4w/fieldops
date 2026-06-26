@@ -407,6 +407,7 @@ function showDetail(o) {
 
   $("detailPanel").classList.add("open");
   $("dClose").onclick = closeDetail;
+  const grab = $("detailGrab"); if (grab) grab.onclick = closeDetail;
   $("editBtn").onclick = () => openOrderModal(o);
   $("gisBtn").onclick = () => openCityGIS(o.lat, o.lng);
   $("detailContent").querySelectorAll("[data-status]").forEach(b => b.onclick = async () => {
