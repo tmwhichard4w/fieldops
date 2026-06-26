@@ -2,7 +2,7 @@
 // app.js — FieldOps UI logic, wired to Supabase via data.js
 // ============================================================
 import * as api from "./data.js";
-import { MAP_CENTER, MAP_ZOOM, OT_MULTIPLIER } from "./config.js";
+import { MAP_CENTER, MAP_ZOOM, OT_MULTIPLIER, CITY_GIS_URL } from "./config.js";
 
 // ---------- tiny helpers ----------
 const $ = id => document.getElementById(id);
@@ -12,6 +12,16 @@ const fmtDT = s => s ? new Date(s).toLocaleString("en-US", { month: "short", day
 const isWater = o => o.category === "Water Leak";
 const isSewer = o => o.category === "Sewer Issue";
 
+// Open the City of Troy GIS map, centered on a location when we have one.
+function openCityGIS(lat, lng) {
+  let url = CITY_GIS_URL;
+  if (lat && lng) {
+    // Mango supports a center hash: #lat,lng,zoom
+    url += `#${lat},${lng},18`;
+  }
+  window.open(url, "_blank", "noopener");
+}
+
 function respTime(o) {
   if (!o.reported_at || !o.found_at) return null;
   const d = (new Date(o.found_at) - new Date(o.reported_at)) / 3.6e6;
@@ -19,7 +29,7 @@ function respTime(o) {
 }
 
 // ---------- state ----------
-let orders = [], equipment = [], inventory = [], requests = [], schedules = [];
+let orders = [], equipment = [], inventory = [], requests = [], schedules = [], valves = [];
 let logs = { labor: [], equip: [], mat: [] }, photos = [];
 let filterStatus = "all", selectedId = null, editingId = null, prefillReq = null;
 let map, markers = {};
@@ -27,7 +37,7 @@ let map, markers = {};
 const TABS = [
   ["map", "Map"], ["list", "Orders"], ["water", "Water"], ["sewer", "Sewer"],
   ["intake", "Requests"], ["schedule", "Schedule"], ["inventory", "Inventory"],
-  ["equipment", "Equipment"], ["reports", "Reports"], ["settings", "Settings"]
+  ["equipment", "Equipment"], ["valves", "Valves"], ["reports", "Reports"], ["settings", "Settings"]
 ];
 
 // ============================================================
@@ -61,14 +71,15 @@ async function startApp() {
   $("zoomIn").onclick = () => map.zoomIn();
   $("zoomOut").onclick = () => map.zoomOut();
   $("fitAll").onclick = fitAll;
+  $("cityGis").onclick = () => openCityGIS(map.getCenter().lat, map.getCenter().lng);
   await refreshAll();
   showView("map");
 }
 
 async function refreshAll() {
-  [orders, equipment, inventory, requests, schedules] = await Promise.all([
+  [orders, equipment, inventory, requests, schedules, valves] = await Promise.all([
     api.listWorkOrders(), api.listEquipment(), api.listInventory(),
-    api.listRequests(), api.listSchedules()
+    api.listRequests(), api.listSchedules(), api.listValves()
   ]);
   // flatten leak_details (Supabase returns it as array)
   orders.forEach(o => { o.leak = (o.leak_details && o.leak_details[0]) || null; });
@@ -244,11 +255,13 @@ function showDetail(o) {
     <div class="detail-actions">
       ${o.status !== "completed" ? `<button class="action-btn btn-complete" data-status="completed">✓ Complete</button>` : ""}
       ${o.status === "new" ? `<button class="action-btn btn-primary" data-status="in_progress">Start Work</button>` : ""}
+      <button class="action-btn btn-secondary" id="gisBtn">🗺️ View City GIS</button>
       <button class="action-btn btn-secondary" id="editBtn">Edit</button></div>`;
 
   $("detailPanel").classList.add("open");
   $("dClose").onclick = closeDetail;
   $("editBtn").onclick = () => openOrderModal(o);
+  $("gisBtn").onclick = () => openCityGIS(o.lat, o.lng);
   $("detailContent").querySelectorAll("[data-status]").forEach(b => b.onclick = async () => {
     const newStatus = b.dataset.status;
     await api.setStatus(o.id, newStatus);
@@ -445,7 +458,7 @@ function showView(v) {
   $("pageView").style.display = v === "map" ? "none" : "block";
   $("navTabs").querySelectorAll(".nav-tab").forEach(t => t.classList.toggle("active", t.dataset.view === v));
   if (v === "map" && map) setTimeout(() => map.invalidateSize(), 100);
-  const render = { list: pgList, water: () => pgLeaks("water"), sewer: () => pgLeaks("sewer"), intake: pgIntake, schedule: pgSchedule, inventory: pgInventory, equipment: pgEquipment, reports: pgReports, settings: pgSettings }[v];
+  const render = { list: pgList, water: () => pgLeaks("water"), sewer: () => pgLeaks("sewer"), intake: pgIntake, schedule: pgSchedule, inventory: pgInventory, equipment: pgEquipment, valves: pgValves, reports: pgReports, settings: pgSettings }[v];
   if (render) render();
 }
 
@@ -651,5 +664,131 @@ async function pgSettings() {
     await api.notify("created", "FieldOps test email", "This is a test. If you received this, email alerts are working.");
     $("setMsg").style.color = "var(--green-txt)";
     $("setMsg").textContent = "Test sent — check the inbox (and spam) for " + email + ". If alerts are off, it won't arrive; flip the master switch on first.";
+  };
+}
+
+// ============================================================
+// VALVES — field-located valves (added after finding leaks)
+// ============================================================
+let valveMap = null, valveMarkers = {}, valvePhotos = [];
+
+function pgValves() {
+  const rows = valves.map(v => `<tr data-id="${v.id}" style="cursor:pointer">
+    <td style="font-family:monospace;font-size:12px;color:var(--txt3)">${esc(v.valve_tag || "—")}</td>
+    <td style="font-weight:600">${esc(v.valve_type)}</td>
+    <td>${esc(v.size)}</td><td>${esc(v.depth)}</td>
+    <td style="font-size:13px">${esc(v.address || "")}</td>
+    <td style="font-size:12px">${v.exercised_on || "—"}</td></tr>`).join("");
+  $("pageContent").innerHTML = `
+    <div class="page-head"><h2>🔧 Valves</h2><button class="new-btn" id="addValve"><svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px"><path d="M8 3v10M3 8h10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg><span>Add Valve</span></button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+      <div class="stat-card"><div class="stat-num">${valves.length}</div><div class="stat-lbl">Valves Mapped</div></div>
+      <div class="stat-card"><div class="stat-num">${valves.filter(v => v.work_order_id).length}</div><div class="stat-lbl">From Leak Repairs</div></div>
+    </div>
+    <div id="valveMap" style="height:300px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);margin-bottom:16px"></div>
+    <div class="data-card"><table class="data-table"><thead><tr><th>Tag</th><th>Type</th><th>Size</th><th>Depth</th><th>Location</th><th>Last Exercised</th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="color:var(--txt3)">No valves added yet. Tap "Add Valve" after locating one in the field.</td></tr>`}</tbody></table></div>
+    <p style="font-size:13px;color:var(--txt3)">Tap a valve in the table or map to view or edit. Use "Add Valve" when the crew locates or installs a valve during a repair.</p>`;
+
+  $("addValve").onclick = () => openValveModal();
+  // mini map
+  setTimeout(() => {
+    valveMarkers = {};
+    valveMap = L.map("valveMap", { zoomControl: true }).setView(MAP_CENTER, MAP_ZOOM);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap", maxZoom: 19 }).addTo(valveMap);
+    const pts = [];
+    valves.filter(v => v.lat && v.lng).forEach(v => {
+      const icon = L.divIcon({ html: `<div style="width:18px;height:18px;border-radius:3px;background:#7c3aed;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transform:rotate(45deg)"></div>`, iconSize: [18, 18], iconAnchor: [9, 9], className: "" });
+      const m = L.marker([v.lat, v.lng], { icon }).addTo(valveMap);
+      m.bindPopup(`<b>${esc(v.valve_type)} ${esc(v.size)}</b><br><span style="font-size:12px;color:#666">${esc(v.valve_tag || "")} · ${esc(v.depth)} deep</span>`);
+      m.on("click", () => openValveModal(v));
+      valveMarkers[v.id] = m; pts.push([v.lat, v.lng]);
+    });
+    if (pts.length) valveMap.fitBounds(pts, { padding: [40, 40], maxZoom: 16 });
+  }, 100);
+
+  $("pageContent").querySelectorAll("tr[data-id]").forEach(t => t.onclick = () => {
+    openValveModal(valves.find(v => v.id === t.dataset.id));
+  });
+}
+
+async function openValveModal(v) {
+  v = v || {};
+  valvePhotos = v.id ? await api.photosForValve(v.id) : [];
+  const types = ["Gate", "Butterfly", "Isolation", "Flush", "Air-Release", "Check", "Other"];
+  const sizes = ['3/4"', '1"', '2"', '4"', '6"', '8"', '10"', '12"', '16"'];
+  const sel = (arr, val) => arr.map(x => `<option ${x === val ? "selected" : ""}>${x}</option>`).join("");
+  // build a work order dropdown (link to the leak that prompted it)
+  const woOpts = `<option value="">— none —</option>` + orders.map(o =>
+    `<option value="${o.id}" ${o.id === v.work_order_id ? "selected" : ""}>${esc(o.wo_number)} — ${esc(o.title)}</option>`).join("");
+  const photoHtml = valvePhotos.map(p => `<div class="photo-thumb"><img src="${p.url}" alt=""></div>`).join("");
+
+  $("modalBox").innerHTML = `
+    <h2>${v.id ? "Edit" : "Add"} Valve</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>Valve ID / Tag</label><input class="form-control" id="v-tag" value="${esc(v.valve_tag || "")}" placeholder="e.g. V-104 (optional)"></div>
+      <div class="form-group"><label>Type *</label><select class="form-control" id="v-type">${sel(types, v.valve_type)}</select></div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label>Size *</label><select class="form-control" id="v-size">${sel(sizes, v.size || '6"')}</select></div>
+      <div class="form-group"><label>Depth *</label><input class="form-control" id="v-depth" value="${esc(v.depth || "")}" placeholder='e.g. 4 ft'></div>
+    </div>
+    <div class="form-group"><label>Location / Address</label><input class="form-control" id="v-addr" value="${esc(v.address || "")}" placeholder="Street / intersection"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>Latitude</label><input class="form-control" id="v-lat" type="number" step="any" value="${v.lat || ""}" placeholder="${MAP_CENTER[0]}"></div>
+      <div class="form-group"><label>Longitude</label><input class="form-control" id="v-lng" type="number" step="any" value="${v.lng || ""}" placeholder="${MAP_CENTER[1]}"></div>
+    </div>
+    <button class="ghost-btn" id="v-useloc" style="margin-bottom:14px;width:100%">📍 Use my current location</button>
+    <div class="form-grid">
+      <div class="form-group"><label>Date Installed</label><input class="form-control" id="v-installed" type="date" value="${v.installed_on || ""}"></div>
+      <div class="form-group"><label>Last Exercised</label><input class="form-control" id="v-exercised" type="date" value="${v.exercised_on || ""}"></div>
+    </div>
+    <div class="form-group"><label>Linked Work Order (the leak that prompted it)</label><select class="form-control" id="v-wo">${woOpts}</select></div>
+    <div class="form-group"><label>Notes</label><textarea class="form-control" id="v-notes">${esc(v.notes || "")}</textarea></div>
+    ${v.id ? `<div class="section-title">📷 Photos</div><div class="photo-row" id="v-photos">${photoHtml}<label class="photo-thumb photo-add"><svg viewBox="0 0 24 24" fill="none"><path d="M12 6v12M6 12h12" stroke-linecap="round"/></svg>Add<input type="file" accept="image/*" capture="environment" id="v-photoInput" style="display:none"></label></div>` : `<p style="font-size:13px;color:var(--txt3)">Save the valve first, then you can add photos.</p>`}
+    <div class="modal-actions">
+      <button class="action-btn btn-primary" id="saveValve">Save Valve</button>
+      ${v.id ? `<button class="action-btn btn-secondary" id="gisValve">🗺️ City GIS</button>` : ""}
+      <button class="action-btn btn-secondary" id="cancelValve">Cancel</button>
+    </div>
+    ${v.id ? `<button class="ghost-btn" id="delValve" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Delete this valve</button>` : ""}`;
+
+  $("modalOverlay").classList.add("open");
+  $("cancelValve").onclick = closeModal;
+  $("v-useloc").onclick = () => {
+    if (!navigator.geolocation) { alert("Location not available on this device."); return; }
+    $("v-useloc").textContent = "📍 Getting location…";
+    navigator.geolocation.getCurrentPosition(
+      pos => { $("v-lat").value = pos.coords.latitude.toFixed(6); $("v-lng").value = pos.coords.longitude.toFixed(6); $("v-useloc").textContent = "📍 Location set ✓"; },
+      () => { $("v-useloc").textContent = "📍 Use my current location"; alert("Couldn't get location. Enter coordinates manually or allow location access."); }
+    );
+  };
+  if (v.id) {
+    $("gisValve").onclick = () => openCityGIS(v.lat, v.lng);
+    $("delValve").onclick = async () => {
+      if (!confirm("Delete this valve permanently?")) return;
+      await api.deleteValve(v.id); closeModal(); await refreshAll(); pgValves();
+    };
+    $("v-photoInput").onchange = async e => {
+      const file = e.target.files[0]; if (!file) return;
+      const label = prompt("Photo label:", "Valve") || "Valve";
+      try { await api.uploadValvePhoto(v.id, file, label); openValveModal(valves.find(x => x.id === v.id)); }
+      catch (err) { alert("Upload failed: " + err.message); }
+    };
+  }
+  $("saveValve").onclick = async () => {
+    const type = $("v-type").value, size = $("v-size").value, depth = $("v-depth").value.trim();
+    if (!depth) { alert("Please enter the depth."); return; }
+    const rec = {
+      valve_tag: $("v-tag").value.trim(), valve_type: type, size, depth,
+      address: $("v-addr").value.trim(),
+      lat: parseFloat($("v-lat").value) || null, lng: parseFloat($("v-lng").value) || null,
+      installed_on: $("v-installed").value || null, exercised_on: $("v-exercised").value || null,
+      work_order_id: $("v-wo").value || null, notes: $("v-notes").value
+    };
+    if (v.id) rec.id = v.id;
+    try {
+      await api.saveValve(rec);
+      closeModal(); await refreshAll(); pgValves();
+    } catch (err) { alert("Save failed: " + err.message); }
   };
 }

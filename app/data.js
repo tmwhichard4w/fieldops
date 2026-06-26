@@ -117,6 +117,24 @@ export async function listSchedules() {
   return data || [];
 }
 
+// ---------- VALVES ----------
+export async function listValves() {
+  const { data, error } = await db.from("valves").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+export async function saveValve(valve) {
+  if (valve.id) {
+    const { error } = await db.from("valves").update(valve).eq("id", valve.id);
+    if (error) throw error;
+    return valve.id;
+  }
+  const { data, error } = await db.from("valves").insert(valve).select().single();
+  if (error) throw error;
+  return data.id;
+}
+export async function deleteValve(id) { return db.from("valves").delete().eq("id", id); }
+
 // ---------- NOTIFICATION SETTINGS ----------
 export async function getNotifySettings() {
   const { data } = await db.from("notification_settings").select("*").eq("id", 1).single();
@@ -148,6 +166,20 @@ export async function uploadPhoto(woId, file, label) {
 }
 export async function photosFor(woId) {
   const { data } = await db.from("photos").select("*").eq("work_order_id", woId);
+  return (data || []).map(p => ({
+    ...p,
+    url: db.storage.from("wo-photos").getPublicUrl(p.storage_path).data.publicUrl
+  }));
+}
+export async function uploadValvePhoto(valveId, file, label) {
+  const path = `valve/${valveId}/${Date.now()}_${file.name}`;
+  const { error } = await db.storage.from("wo-photos").upload(path, file);
+  if (error) throw error;
+  await db.from("photos").insert({ valve_id: valveId, storage_path: path, label });
+  return path;
+}
+export async function photosForValve(valveId) {
+  const { data } = await db.from("photos").select("*").eq("valve_id", valveId);
   return (data || []).map(p => ({
     ...p,
     url: db.storage.from("wo-photos").getPublicUrl(p.storage_path).data.publicUrl
