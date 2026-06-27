@@ -179,6 +179,24 @@ textarea.form-control{resize:vertical;min-height:70px}
   .page-head h2{font-size:19px}
   .data-table th,.data-table td{padding:8px 10px;font-size:13px}
   .modal{max-height:88vh}
+
+  /* Hide the color legend on phones — it duplicates the layer toggles
+     and there's no room for it on a small screen. */
+  .map-legend{display:none}
+
+  /* Map control buttons: smaller and tucked to the right edge. */
+  .map-controls{bottom:8px;right:8px;gap:5px}
+  .map-btn{width:34px;height:34px}
+
+  /* When a work order is open, it should take the FULL screen so it's
+     readable and clearly closeable — not a half overlay over the map. */
+  .detail-panel{max-height:100%;height:100%;border-radius:0;top:0}
+  .detail-panel.open{transform:translateY(0)}
+
+  /* Make the "tap to close" bar a big, obvious, sticky header. */
+  .detail-grab{padding:14px 0 12px;background:var(--blue);position:sticky;top:0}
+  .detail-grab .detail-drag{background:rgba(255,255,255,.6)}
+  .detail-grab-label{color:#fff;font-size:13px;font-weight:700}
 }
 .leaflet-popup-content{margin:10px 14px;font-family:inherit}
 
@@ -204,6 +222,11 @@ textarea.form-control{resize:vertical;min-height:70px}
 .leaflet-control-layers input[type=checkbox]{width:18px;height:18px;accent-color:var(--blue);margin:0}
 .leaflet-control-layers-separator{display:none}
 @media(max-width:760px){
-  .leaflet-control-layers label{padding:8px}
+  .leaflet-control-layers label{padding:9px 6px}
   .leaflet-control-layers input[type=checkbox]{width:20px;height:20px}
+  /* Collapsed state shows a compact icon button; expanded panel is capped
+     so it never covers more than part of the map and can scroll. */
+  .leaflet-control-layers-toggle{width:40px!important;height:40px!important}
+  .leaflet-control-layers-expanded{max-height:60vh;overflow-y:auto;max-width:62vw}
+  .leaflet-control-layers-list{font-size:14px}
 }

@@ -127,6 +127,11 @@ export async function adjustStock(invId, delta) {
   if (!data) return;
   await db.from("inventory").update({ qty: Math.max(0, Number(data.qty) + delta) }).eq("id", invId);
 }
+export async function saveInventoryItem(i) {
+  if (i.id) { const { error } = await db.from("inventory").update(i).eq("id", i.id); if (error) throw error; return i.id; }
+  const { data, error } = await db.from("inventory").insert(i).select().single(); if (error) throw error; return data.id;
+}
+export async function deleteInventoryItem(id) { return db.from("inventory").delete().eq("id", id); }
 
 // ---------- REQUESTS ----------
 export async function listRequests() {

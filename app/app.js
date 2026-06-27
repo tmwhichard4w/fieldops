@@ -756,19 +756,51 @@ function pgInventory() {
     const pct = Math.min(100, Math.round(i.qty / (i.min_qty * 2 || 1) * 100));
     const low = Number(i.qty) < Number(i.min_qty);
     const color = low ? "var(--red)" : i.qty < i.min_qty * 1.5 ? "var(--amber)" : "var(--green)";
-    return `<tr><td style="font-weight:600">${esc(i.name)}</td><td><span class="badge badge-pw">${esc(i.category)}</span></td>
+    return `<tr data-inv="${i.id}" style="cursor:pointer"><td style="font-weight:600">${esc(i.name)}</td><td><span class="badge badge-pw">${esc(i.category)}</span></td>
       <td><div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${color}"></div></div><span class="${low ? "low-stock" : ""}">${i.qty} ${esc(i.unit)}</span></td>
       <td>${i.min_qty}</td><td>${fmt(i.unit_cost)}</td><td>${fmt(i.qty * i.unit_cost)}</td>
-      <td>${low ? `<span class="low-stock">⚠ Reorder</span>` : `<span style="color:var(--green-txt)">OK</span>`}</td>
-      <td><button class="add-line-btn" data-restock="${i.id}">+ Restock</button></td></tr>`;
+      <td>${low ? `<span class="low-stock">⚠ Reorder</span>` : `<span style="color:var(--green-txt)">OK</span>`}</td></tr>`;
   }).join("");
-  $("pageContent").innerHTML = `<div class="page-head"><h2>📦 Inventory</h2></div>
-    <div class="data-card"><table class="data-table"><thead><tr><th>Item</th><th>Category</th><th>In Stock</th><th>Min</th><th>Unit</th><th>Value</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p style="font-size:13px;color:var(--txt3)">Stock auto-deducts when materials are logged on a work order.</p>`;
-  $("pageContent").querySelectorAll("[data-restock]").forEach(b => b.onclick = async () => {
-    const n = prompt("Add how many?", "10"); if (!n) return;
-    await api.adjustStock(b.dataset.restock, parseInt(n) || 0); await refreshAll(); pgInventory();
-  });
+  $("pageContent").innerHTML = `<div class="page-head"><h2>📦 Inventory</h2><button class="new-btn" id="addInv"><svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px"><path d="M8 3v10M3 8h10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg><span>Add Item</span></button></div>
+    <div class="data-card"><table class="data-table"><thead><tr><th>Item</th><th>Category</th><th>In Stock</th><th>Min</th><th>Unit Cost</th><th>Value</th><th>Status</th></tr></thead><tbody>${rows || `<tr><td colspan="7" style="color:var(--txt3)">No items yet — tap "Add Item".</td></tr>`}</tbody></table></div>
+    <p style="font-size:13px;color:var(--txt3)">Tap any item to edit its name, quantity, minimum, cost, or unit — or to delete it. Stock auto-deducts when materials are logged on a work order.</p>`;
+  $("addInv").onclick = () => openInventoryModal();
+  $("pageContent").querySelectorAll("tr[data-inv]").forEach(t => t.onclick = () => openInventoryModal(inventory.find(i => i.id === t.dataset.inv)));
+}
+
+function openInventoryModal(i) {
+  i = i || {};
+  const units = ["ea", "ft", "bag", "ton", "case", "box", "roll", "gal", "lb"];
+  const cats = ["Clamps", "Pipe", "Valves", "Fittings", "Hydrants", "Meters", "Roads", "Aggregate", "Consumables", "Sewer", "Other"];
+  const sel = (arr, v) => arr.map(x => `<option ${x === v ? "selected" : ""}>${x}</option>`).join("");
+  $("modalBox").innerHTML = `
+    <h2>${i.id ? "Edit" : "Add"} Inventory Item</h2>
+    <div class="form-group"><label>Item Name *</label><input class="form-control" id="i-name" value="${esc(i.name || "")}" placeholder="e.g. Repair Clamp 6&quot;"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>Category</label><select class="form-control" id="i-cat">${sel(cats, i.category || "Other")}</select></div>
+      <div class="form-group"><label>Unit</label><select class="form-control" id="i-unit">${sel(units, i.unit || "ea")}</select></div>
+    </div>
+    <div class="form-grid-3">
+      <div class="form-group"><label>In Stock</label><input class="form-control" id="i-qty" type="number" step="any" value="${i.qty ?? 0}"></div>
+      <div class="form-group"><label>Min (reorder)</label><input class="form-control" id="i-min" type="number" step="any" value="${i.min_qty ?? 0}"></div>
+      <div class="form-group"><label>Unit Cost ($)</label><input class="form-control" id="i-cost" type="number" step="0.01" value="${i.unit_cost ?? 0}"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="action-btn btn-primary" id="saveInv">Save</button>
+      <button class="action-btn btn-secondary" id="cancelInv">Cancel</button>
+    </div>
+    ${i.id ? `<button class="ghost-btn" id="delInv" style="width:100%;margin-top:10px;color:var(--red-txt);border-color:#fca5a5">Delete item</button>` : ""}`;
+  $("modalOverlay").classList.add("open");
+  $("cancelInv").onclick = closeModal;
+  if (i.id) $("delInv").onclick = async () => { if (confirm(`Delete "${i.name}"?`)) { await api.deleteInventoryItem(i.id); closeModal(); await refreshAll(); pgInventory(); } };
+  $("saveInv").onclick = async () => {
+    const name = $("i-name").value.trim(); if (!name) { alert("Enter an item name."); return; }
+    const rec = { name, category: $("i-cat").value, unit: $("i-unit").value,
+      qty: parseFloat($("i-qty").value) || 0, min_qty: parseFloat($("i-min").value) || 0,
+      unit_cost: parseFloat($("i-cost").value) || 0 };
+    if (i.id) rec.id = i.id;
+    try { await api.saveInventoryItem(rec); closeModal(); await refreshAll(); pgInventory(); } catch (err) { alert("Save failed: " + err.message); }
+  };
 }
 
 function pgEquipment() {
