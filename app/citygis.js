@@ -20,27 +20,20 @@ const CITY_GIS_CONFIG = {
   lift_station: { label: "🏭 City Lift Station",     color: "#be123c", kind: "point", on: false },
 };
 
-// Try several URL forms so it works regardless of how the site is served.
+// The data file is served at this exact address (verified reachable).
+const GIS_URL = "https://cotworkorder.netlify.app/troy_gis.json";
+
 async function fetchGisData() {
-  const candidates = [
-    "troy_gis.json",
-    "./troy_gis.json",
-    "/troy_gis.json",
-    new URL("troy_gis.json", import.meta.url).href,
-  ];
-  for (const url of candidates) {
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (res.ok) { console.log("City GIS: loaded from", url); return await res.json(); }
-    } catch (e) { /* try next */ }
-  }
-  throw new Error("could not fetch troy_gis.json from any path");
+  const res = await fetch(GIS_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error("fetch failed: HTTP " + res.status);
+  return await res.json();
 }
 
 export async function loadCityGIS(map, layersControl) {
   let data;
   try {
     data = await fetchGisData();
+    console.log("City GIS: data loaded OK");
   } catch (err) {
     console.error("City GIS layers not loaded:", err.message);
     return;
